@@ -1,0 +1,26 @@
+[package]
+name = "agat-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Core types, traits, and encrypted vault for agat"
+
+[dependencies]
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+serde.workspace = true
+serde_json.workspace = true
+
+sha2.workspace = true
+aes-gcm.workspace = true
+argon2.workspace = true
+hex.workspace = true
+zeroize.workspace = true
+rand.workspace = true
+
+chrono.workspace = true

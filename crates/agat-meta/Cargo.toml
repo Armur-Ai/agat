@@ -1,0 +1,12 @@
+[package]
+name = "agat-meta"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Metamorphic-engine detection: normalization, clustering"
+
+[dependencies]
+agat-core.workspace = true

@@ -1,0 +1,17 @@
+[package]
+name = "agat-tui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Ratatui-based interactive shell for agat"
+
+[dependencies]
+agat-core.workspace = true
+agat-store.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+ratatui.workspace = true
+crossterm.workspace = true
