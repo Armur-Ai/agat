@@ -1,5 +1,7 @@
 # agat
 
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
+
 **A research and analysis tool for polymorphic, metamorphic, and AI-rewritten malware.**
 
 agat statically and dynamically dissects self-mutating binaries — the classical kind that have existed for decades, and the kind we expect to exist soon: malware that rewrites its own payload using AI coding agents. The goal is to give analysts a concrete toolkit and a concrete vocabulary for a class of threat that is *almost* here.
@@ -111,7 +113,7 @@ The TUI lays out a sample browser, cluster sidebar, and per-sample analysis tabs
 
 ## Status
 
-agat is in early development as the demonstration vehicle for an upcoming **VulnCon** talk on AI-driven self-rewriting malware. Roadmap:
+agat is in early development. Roadmap:
 
 | Phase | Status | Deliverable |
 |---|---|---|
@@ -123,16 +125,16 @@ agat is in early development as the demonstration vehicle for an upcoming **Vuln
 | 5 |  | `agat-ai` (signals 1, 3, 4) |
 | 6 |  | `agat-ai` perplexity (signal 2) |
 | 7 |  | `agat-rewriter` |
-| 8 |  | TUI polish, demo script |
+| 8 |  | TUI polish |
 | 9 | optional | `agat-sandbox` |
 
 The roadmap will move once Phase 0 is in.
 
 ---
 
-## Talk
+## Talks
 
-agat will be presented at **VulnCon**. Slides, recording, and demo asciinema will be linked here once the talk goes live.
+- **VulnCon** — slides, recording, and demo asciinema linked here when available.
 
 ---
 
@@ -155,4 +157,6 @@ Contributions are welcome once Phase 0 lands and the crate scaffolding is stable
 
 ## License
 
-To be determined.
+agat is licensed under the **GNU Affero General Public License v3.0**. See [LICENSE](LICENSE) for the full text.
+
+The AGPL ensures that anyone who runs a modified version of agat as a network service must also make their modifications available under the same license. This is intentional: agat is research infrastructure for the community, and we want improvements made in the open.
