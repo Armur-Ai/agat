@@ -1,6 +1,7 @@
 //! agat command-line entry point.
 
 use agat_core::{AnalysisContext, Analyzer, Sample, SampleId, SampleKind, SampleMetadata, Vault};
+use agat_disasm::{DisasmAnalyzer, DisasmFeatures, FlowKind};
 use agat_static::{
     entropy::EntropyCurve, strings::StringEncoding, StaticAnalyzer, StaticFeatures,
 };
@@ -33,11 +34,11 @@ enum Cmd {
     },
     /// List samples currently in the store.
     List,
-    /// Run the static analyzer on one sample or all samples.
+    /// Run all analyzers on one sample or every sample.
     Analyze {
-        /// Sample id (full SHA-256 or unique prefix). Omit to analyze every sample.
+        /// Sample id (full SHA-256 or unique prefix). Omit for all samples.
         id: Option<String>,
-        /// Re-analyze even if features for the current version already exist.
+        /// Re-analyze even when features for the current version already exist.
         #[arg(long)]
         force: bool,
     },
@@ -45,6 +46,9 @@ enum Cmd {
     Show {
         /// Sample id (full SHA-256 or unique prefix).
         id: String,
+        /// Include a disassembly preview at the bottom of the output.
+        #[arg(long)]
+        disasm: bool,
     },
     /// Launch the interactive TUI.
     Tui,
@@ -75,7 +79,7 @@ fn main() -> Result<()> {
         Cmd::Ingest { paths } => cmd_ingest(paths, &vault, &store),
         Cmd::List => cmd_list(&store),
         Cmd::Analyze { id, force } => cmd_analyze(id, force, &vault, &store),
-        Cmd::Show { id } => cmd_show(id, &store),
+        Cmd::Show { id, disasm } => cmd_show(id, disasm, &store),
         Cmd::Tui => agat_tui::run(vault, store).context("running tui"),
     }
 }
@@ -98,8 +102,6 @@ fn read_password() -> Result<String> {
     rpassword::prompt_password("Vault password: ").context("reading vault password")
 }
 
-/// Resolve a user-supplied identifier into a `SampleId`. Accepts a
-/// full 64-char hex SHA-256 or any unique prefix.
 fn resolve_sample_id(input: &str, store: &Store) -> Result<SampleId> {
     if input.len() == 64 {
         return SampleId::from_hex(input).map_err(|e| anyhow::anyhow!("{e}"));
@@ -194,7 +196,10 @@ fn cmd_list(store: &Store) -> Result<()> {
 }
 
 fn cmd_analyze(target: Option<String>, force: bool, vault: &Vault, store: &Store) -> Result<()> {
-    let analyzer = StaticAnalyzer::default();
+    let analyzers: Vec<Box<dyn Analyzer>> = vec![
+        Box::new(StaticAnalyzer::default()),
+        Box::new(DisasmAnalyzer::default()),
+    ];
     let ctx = AnalysisContext { vault };
 
     let targets: Vec<StoredSample> = match target {
@@ -213,32 +218,38 @@ fn cmd_analyze(target: Option<String>, force: bool, vault: &Vault, store: &Store
         return Ok(());
     }
 
-    let mut analyzed = 0;
-    let mut skipped = 0;
+    let mut total_analyzed = 0u64;
+    let mut total_skipped = 0u64;
     for stored in &targets {
         let id = &stored.sample.id;
-        if !force {
-            if let Some(existing) = store.get_features(id, analyzer.name())? {
-                if existing.version == analyzer.version() {
-                    tracing::debug!(sample = %id.short(), "already analyzed at current version");
-                    skipped += 1;
-                    continue;
+        for analyzer in &analyzers {
+            if !force {
+                if let Some(existing) = store.get_features(id, analyzer.name())? {
+                    if existing.version == analyzer.version() {
+                        tracing::debug!(
+                            sample = %id.short(),
+                            analyzer = analyzer.name(),
+                            "already at current version"
+                        );
+                        total_skipped += 1;
+                        continue;
+                    }
                 }
             }
+            let bundle = analyzer.analyze(&stored.sample, &ctx)?;
+            store.insert_features(id, &bundle)?;
+            println!(
+                "analyzed  {}  {} v{}",
+                id.short(),
+                analyzer.name(),
+                analyzer.version()
+            );
+            total_analyzed += 1;
         }
-        let bundle = analyzer.analyze(&stored.sample, &ctx)?;
-        store.insert_features(id, &bundle)?;
-        println!(
-            "analyzed  {}  {} v{}",
-            id.short(),
-            analyzer.name(),
-            analyzer.version()
-        );
-        analyzed += 1;
     }
     eprintln!(
-        "\n{analyzed} analyzed, {skipped} skipped{}",
-        if skipped > 0 && !force {
+        "\n{total_analyzed} analyses run, {total_skipped} skipped{}",
+        if total_skipped > 0 && !force {
             " (already at current version; use --force to re-run)"
         } else {
             ""
@@ -247,12 +258,13 @@ fn cmd_analyze(target: Option<String>, force: bool, vault: &Vault, store: &Store
     Ok(())
 }
 
-fn cmd_show(input: String, store: &Store) -> Result<()> {
+fn cmd_show(input: String, disasm: bool, store: &Store) -> Result<()> {
     let id = resolve_sample_id(&input, store)?;
     let stored = store
         .get_sample(&id)?
         .ok_or_else(|| anyhow::anyhow!("sample {} not found", id.short()))?;
-    let features = store.get_features(&id, "static")?;
+    let static_rec = store.get_features(&id, "static")?;
+    let disasm_rec = store.get_features(&id, "disasm")?;
 
     println!(
         "{}  {}",
@@ -272,7 +284,7 @@ fn cmd_show(input: String, store: &Store) -> Result<()> {
         stored.ingested_at.format("%Y-%m-%d %H:%M:%S UTC")
     );
 
-    let Some(rec) = features else {
+    let Some(rec) = static_rec else {
         println!(
             "\n(no analyzer features yet — run `agat analyze {}`)",
             id.short()
@@ -283,6 +295,20 @@ fn cmd_show(input: String, store: &Store) -> Result<()> {
     let feat: StaticFeatures = serde_json::from_value(rec.features)
         .context("decoding static analyzer features")?;
     print_static_features(&feat);
+
+    if disasm {
+        match disasm_rec {
+            None => println!(
+                "\n(no disasm features yet — run `agat analyze {} --force`)",
+                id.short()
+            ),
+            Some(rec) => {
+                let df: DisasmFeatures = serde_json::from_value(rec.features)
+                    .context("decoding disasm features")?;
+                print_disasm_features(&df);
+            }
+        }
+    }
     Ok(())
 }
 
@@ -386,11 +412,75 @@ fn print_static_features(f: &StaticFeatures) {
     }
 }
 
+fn print_disasm_features(df: &DisasmFeatures) {
+    println!("\ndisassembly");
+    if df.bitness == 0 {
+        println!(
+            "  (architecture {} not supported by Phase 2 disasm; need x86/x64)",
+            df.arch
+        );
+        return;
+    }
+    println!(
+        "  arch          {} ({}-bit)",
+        df.arch, df.bitness
+    );
+    println!(
+        "  section       {}  (base 0x{:08x}, {} bytes)",
+        df.disassembled_section.as_deref().unwrap_or("?"),
+        df.section_base,
+        df.disassembled_bytes
+    );
+    println!(
+        "  instructions  {}  blocks {}  ~functions {}",
+        df.instruction_count, df.block_count, df.function_estimate
+    );
+
+    if !df.opcode_histogram.is_empty() {
+        let mut hist: Vec<(&String, &usize)> = df.opcode_histogram.iter().collect();
+        hist.sort_by(|a, b| b.1.cmp(a.1));
+        let preview: Vec<String> = hist
+            .iter()
+            .take(8)
+            .map(|(m, c)| format!("{} ({})", m, c))
+            .collect();
+        println!("  top opcodes   {}", preview.join(", "));
+    }
+
+    if df.listing_preview.is_empty() {
+        return;
+    }
+    println!("\n  listing preview (first {} instructions)", df.listing_preview.len().min(40));
+    for l in df.listing_preview.iter().take(40) {
+        let flow_marker = match l.flow {
+            FlowKind::Branch => " ↳",
+            FlowKind::Jump => " ↦",
+            FlowKind::Call => " →",
+            FlowKind::Return => " ⏎",
+            FlowKind::Indirect => " ?",
+            FlowKind::Invalid => " ✗",
+            FlowKind::Next => "  ",
+        };
+        let bytes_col = if l.bytes_hex.len() > 16 {
+            format!("{}…", &l.bytes_hex[..15])
+        } else {
+            format!("{:<16}", l.bytes_hex)
+        };
+        println!(
+            "  0x{:08x}  {}  {:<8}{}{}",
+            l.address, bytes_col, l.mnemonic, l.operands, flow_marker
+        );
+    }
+}
+
 fn entropy_sparkline(curve: &EntropyCurve, width: usize) -> String {
     if curve.points.is_empty() {
         return String::new();
     }
-    const BLOCKS: [char; 9] = [' ', '\u{2581}', '\u{2582}', '\u{2583}', '\u{2584}', '\u{2585}', '\u{2586}', '\u{2587}', '\u{2588}'];
+    const BLOCKS: [char; 9] = [
+        ' ', '\u{2581}', '\u{2582}', '\u{2583}', '\u{2584}', '\u{2585}', '\u{2586}', '\u{2587}',
+        '\u{2588}',
+    ];
     let n = curve.points.len();
     let cols = width.min(n).max(1);
     let stride = ((n as f64) / (cols as f64)).ceil() as usize;
@@ -401,9 +491,11 @@ fn entropy_sparkline(curve: &EntropyCurve, width: usize) -> String {
         if start >= end {
             break;
         }
-        let avg: f64 = curve.points[start..end].iter().map(|p| p.entropy).sum::<f64>()
+        let avg: f64 = curve.points[start..end]
+            .iter()
+            .map(|p| p.entropy)
+            .sum::<f64>()
             / (end - start) as f64;
-        // 0..=8 bits → BLOCKS[0..=8]
         let idx = (avg.max(0.0).min(8.0) * (BLOCKS.len() as f64 - 1.0) / 8.0).round() as usize;
         out.push(BLOCKS[idx.min(BLOCKS.len() - 1)]);
     }

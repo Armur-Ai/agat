@@ -12,6 +12,7 @@ description = "Ratatui-based interactive shell for agat"
 agat-core.workspace = true
 agat-store.workspace = true
 agat-static.workspace = true
+agat-disasm.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
 serde.workspace = true

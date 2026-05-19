@@ -16,6 +16,7 @@ path = "src/main.rs"
 agat-core.workspace = true
 agat-store.workspace = true
 agat-static.workspace = true
+agat-disasm.workspace = true
 agat-tui.workspace = true
 anyhow.workspace = true
 tracing.workspace = true

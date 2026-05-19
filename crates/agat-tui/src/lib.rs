@@ -1,12 +1,12 @@
 //! Ratatui shell for agat.
 //!
-//! Phase 1: sample browser left, overview right. If static analyzer
-//! features exist for the selected sample, the overview pane shows a
-//! rich breakdown (format/arch, hashes, entropy, sections, imports,
-//! string counts). Otherwise it nudges the user to run
-//! `agat analyze <id>`.
+//! Phase 2: tabs over the right pane (Overview, Disasm). Sample
+//! browser on the left, tabbed analyzer view on the right. Disasm
+//! pane shows arch/section info and the first ~40 instructions of
+//! the listing, colored by control-flow kind.
 
 use agat_core::{SampleId, Vault};
+use agat_disasm::{DisasmFeatures, FlowKind};
 use agat_static::StaticFeatures;
 use agat_store::{Store, StoredSample};
 use anyhow::Result;
@@ -22,7 +22,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap},
+    widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Tabs, Wrap},
     Frame, Terminal,
 };
 use std::collections::HashMap;
@@ -32,14 +32,20 @@ use std::time::Duration;
 pub fn run(_vault: Vault, store: Store) -> Result<()> {
     let samples = store.list_samples()?;
     let mut static_features: HashMap<SampleId, StaticFeatures> = HashMap::new();
+    let mut disasm_features: HashMap<SampleId, DisasmFeatures> = HashMap::new();
     for s in &samples {
         if let Ok(Some(rec)) = store.get_features(&s.sample.id, "static") {
             if let Ok(sf) = serde_json::from_value::<StaticFeatures>(rec.features) {
                 static_features.insert(s.sample.id, sf);
             }
         }
+        if let Ok(Some(rec)) = store.get_features(&s.sample.id, "disasm") {
+            if let Ok(df) = serde_json::from_value::<DisasmFeatures>(rec.features) {
+                disasm_features.insert(s.sample.id, df);
+            }
+        }
     }
-    let mut app = App::new(samples, static_features);
+    let mut app = App::new(samples, static_features, disasm_features);
 
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -60,16 +66,40 @@ pub fn run(_vault: Vault, store: Store) -> Result<()> {
     res
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Tab {
+    Overview,
+    Disasm,
+}
+
+impl Tab {
+    fn index(self) -> usize {
+        match self {
+            Tab::Overview => 0,
+            Tab::Disasm => 1,
+        }
+    }
+    fn cycle(self) -> Tab {
+        match self {
+            Tab::Overview => Tab::Disasm,
+            Tab::Disasm => Tab::Overview,
+        }
+    }
+}
+
 struct App {
     samples: Vec<StoredSample>,
     static_features: HashMap<SampleId, StaticFeatures>,
+    disasm_features: HashMap<SampleId, DisasmFeatures>,
     list_state: ListState,
+    active_tab: Tab,
 }
 
 impl App {
     fn new(
         samples: Vec<StoredSample>,
         static_features: HashMap<SampleId, StaticFeatures>,
+        disasm_features: HashMap<SampleId, DisasmFeatures>,
     ) -> Self {
         let mut list_state = ListState::default();
         if !samples.is_empty() {
@@ -78,7 +108,9 @@ impl App {
         Self {
             samples,
             static_features,
+            disasm_features,
             list_state,
+            active_tab: Tab::Overview,
         }
     }
 
@@ -110,9 +142,14 @@ impl App {
         self.list_state.selected().and_then(|i| self.samples.get(i))
     }
 
-    fn selected_features(&self) -> Option<&StaticFeatures> {
+    fn selected_static(&self) -> Option<&StaticFeatures> {
         self.selected()
             .and_then(|s| self.static_features.get(&s.sample.id))
+    }
+
+    fn selected_disasm(&self) -> Option<&DisasmFeatures> {
+        self.selected()
+            .and_then(|s| self.disasm_features.get(&s.sample.id))
     }
 }
 
@@ -134,6 +171,9 @@ fn run_loop<B: ratatui::backend::Backend>(
                     }
                     KeyCode::Down | KeyCode::Char('j') => app.next(),
                     KeyCode::Up | KeyCode::Char('k') => app.prev(),
+                    KeyCode::Char('1') => app.active_tab = Tab::Overview,
+                    KeyCode::Char('2') => app.active_tab = Tab::Disasm,
+                    KeyCode::Tab => app.active_tab = app.active_tab.cycle(),
                     _ => {}
                 }
             }
@@ -152,6 +192,7 @@ fn draw(f: &mut Frame, app: &App) {
         .split(f.area());
 
     let analyzed = app.static_features.len();
+    let with_disasm = app.disasm_features.len();
     let header = Paragraph::new(Line::from(vec![
         Span::styled(
             " agat ",
@@ -162,7 +203,12 @@ fn draw(f: &mut Frame, app: &App) {
         ),
         Span::raw("  "),
         Span::styled(
-            format!("{} samples · {} analyzed", app.samples.len(), analyzed),
+            format!(
+                "{} samples · {} analyzed · {} disasm",
+                app.samples.len(),
+                analyzed,
+                with_disasm
+            ),
             Style::default().fg(Color::DarkGray),
         ),
     ]));
@@ -173,6 +219,7 @@ fn draw(f: &mut Frame, app: &App) {
         .constraints([Constraint::Length(40), Constraint::Min(0)])
         .split(chunks[1]);
 
+    // Sample list (left)
     let items: Vec<ListItem> = if app.samples.is_empty() {
         vec![ListItem::new(Span::styled(
             "(no samples ingested yet)",
@@ -209,16 +256,39 @@ fn draw(f: &mut Frame, app: &App) {
     let mut state = app.list_state.clone();
     f.render_stateful_widget(list, body[0], &mut state);
 
-    let detail_block = Block::default().borders(Borders::ALL).title(" overview ");
-    let detail_text = build_overview(app);
-    let detail = Paragraph::new(detail_text)
-        .block(detail_block)
+    // Right pane: tabs + content
+    let right_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Min(0)])
+        .split(body[1]);
+
+    let tab_titles = vec![Line::from(" Overview "), Line::from(" Disasm ")];
+    let tabs = Tabs::new(tab_titles)
+        .select(app.active_tab.index())
+        .style(Style::default().fg(Color::DarkGray))
+        .highlight_style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )
+        .divider("│");
+    f.render_widget(tabs, right_chunks[0]);
+
+    let content_lines = match app.active_tab {
+        Tab::Overview => build_overview(app),
+        Tab::Disasm => build_disasm(app),
+    };
+    let content_block = Block::default().borders(Borders::ALL);
+    let content = Paragraph::new(content_lines)
+        .block(content_block)
         .wrap(Wrap { trim: false });
-    f.render_widget(detail, body[1]);
+    f.render_widget(content, right_chunks[1]);
 
     let footer = Paragraph::new(Line::from(vec![
         Span::styled(" j/k ", Style::default().fg(Color::Black).bg(Color::Gray)),
         Span::raw(" navigate    "),
+        Span::styled(" 1/2/Tab ", Style::default().fg(Color::Black).bg(Color::Gray)),
+        Span::raw(" switch tab    "),
         Span::styled(" q ", Style::default().fg(Color::Black).bg(Color::Gray)),
         Span::raw(" quit "),
     ]));
@@ -252,7 +322,7 @@ fn build_overview(app: &App) -> Vec<Line<'static>> {
         Line::from(""),
     ];
 
-    let Some(f) = app.selected_features() else {
+    let Some(f) = app.selected_static() else {
         lines.push(Line::from(Span::styled(
             format!(
                 "(no analyzer features yet — run `agat analyze {}`)",
@@ -283,10 +353,25 @@ fn build_overview(app: &App) -> Vec<Line<'static>> {
             f.entropy.high_entropy_regions.len()
         ),
     ));
-    lines.push(kv("strings", format!(
-        "{} ASCII · {} UTF-16LE",
-        f.strings.ascii_count, f.strings.utf16le_count
-    )));
+    lines.push(kv(
+        "strings",
+        format!(
+            "{} ASCII · {} UTF-16LE",
+            f.strings.ascii_count, f.strings.utf16le_count
+        ),
+    ));
+
+    if let Some(df) = app.selected_disasm() {
+        if df.bitness > 0 {
+            lines.push(kv(
+                "disasm",
+                format!(
+                    "{} ins · {} blocks · ~{} fns",
+                    df.instruction_count, df.block_count, df.function_estimate
+                ),
+            ));
+        }
+    }
 
     if !f.parsed.sections.is_empty() {
         lines.push(Line::from(""));
@@ -343,17 +428,117 @@ fn build_overview(app: &App) -> Vec<Line<'static>> {
     lines
 }
 
+fn build_disasm(app: &App) -> Vec<Line<'static>> {
+    let Some(s) = app.selected() else {
+        return vec![Line::from(Span::styled(
+            "(no sample selected)",
+            Style::default().fg(Color::DarkGray),
+        ))];
+    };
+    let Some(df) = app.selected_disasm() else {
+        return vec![Line::from(Span::styled(
+            format!(
+                "(no disasm features — run `agat analyze {}`)",
+                s.sample.id.short()
+            ),
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::ITALIC),
+        ))];
+    };
+
+    if df.bitness == 0 {
+        return vec![
+            kv("arch", df.arch.to_string()),
+            Line::from(""),
+            Line::from(Span::styled(
+                "(architecture not supported by Phase 2 disasm; need x86/x64)",
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
+            )),
+        ];
+    }
+
+    let mut lines = vec![
+        kv("arch", format!("{} ({}-bit)", df.arch, df.bitness)),
+        kv(
+            "section",
+            df.disassembled_section
+                .clone()
+                .unwrap_or_else(|| "-".into()),
+        ),
+        kv("base", format!("0x{:08x}", df.section_base)),
+        kv("instructions", df.instruction_count.to_string()),
+        kv("blocks", df.block_count.to_string()),
+        kv("~functions", df.function_estimate.to_string()),
+    ];
+
+    if !df.opcode_histogram.is_empty() {
+        let mut hist: Vec<(&String, &usize)> = df.opcode_histogram.iter().collect();
+        hist.sort_by(|a, b| b.1.cmp(a.1));
+        let preview: Vec<String> = hist
+            .iter()
+            .take(6)
+            .map(|(m, c)| format!("{} ({})", m, c))
+            .collect();
+        lines.push(kv("top opcodes", preview.join(", ")));
+    }
+
+    if df.listing_preview.is_empty() {
+        return lines;
+    }
+
+    lines.push(Line::from(""));
+    lines.push(section_header(&format!(
+        "listing (first {})",
+        df.listing_preview.len().min(40)
+    )));
+    for l in df.listing_preview.iter().take(40) {
+        let mnem_style = match l.flow {
+            FlowKind::Branch | FlowKind::Jump => Style::default().fg(Color::Yellow),
+            FlowKind::Call => Style::default().fg(Color::Magenta),
+            FlowKind::Return => Style::default().fg(Color::Red),
+            FlowKind::Indirect => Style::default().fg(Color::Yellow),
+            FlowKind::Invalid => Style::default().fg(Color::Red),
+            FlowKind::Next => Style::default(),
+        };
+        let bytes_col = if l.bytes_hex.len() > 14 {
+            format!("{}…", &l.bytes_hex[..13])
+        } else {
+            format!("{:<14}", l.bytes_hex)
+        };
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("0x{:08x}  ", l.address),
+                Style::default().fg(Color::DarkGray),
+            ),
+            Span::styled(bytes_col, Style::default().fg(Color::Cyan)),
+            Span::raw("  "),
+            Span::styled(
+                format!("{:<8}", l.mnemonic),
+                mnem_style.add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(l.operands.clone(), Style::default().fg(Color::White)),
+        ]));
+    }
+
+    lines
+}
+
 fn section_header(text: &str) -> Line<'static> {
     Line::from(Span::styled(
         format!("── {} ──", text),
-        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
     ))
 }
 
 fn kv(key: &str, value: impl Into<String>) -> Line<'static> {
     Line::from(vec![
         Span::styled(
-            format!("{:<10}", key),
+            format!("{:<11}", key),
             Style::default().fg(Color::DarkGray),
         ),
         Span::raw(value.into()),

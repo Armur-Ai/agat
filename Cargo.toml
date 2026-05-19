@@ -26,6 +26,7 @@ rust-version = "1.80"
 agat-core = { path = "crates/agat-core" }
 agat-store = { path = "crates/agat-store" }
 agat-static = { path = "crates/agat-static" }
+agat-disasm = { path = "crates/agat-disasm" }
 agat-tui = { path = "crates/agat-tui" }
 
 anyhow = "1.0"
@@ -45,6 +46,8 @@ zeroize = "1.8"
 rand = "0.8"
 
 goblin = "0.8"
+iced-x86 = "1.21"
+petgraph = "0.6"
 
 chrono = { version = "0.4", default-features = false, features = ["serde", "clock"] }
 dirs = "5.0"
