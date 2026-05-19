@@ -1,15 +1,19 @@
 //! Ratatui shell for agat.
 //!
-//! Phase 0: a minimal sample browser. Left pane is a scrollable list
-//! of ingested samples; right pane shows basic overview metadata for
-//! the selected sample. Future phases bolt on analyzer-specific tabs
-//! (Disasm, Entropy, Strings, AI-Signals, Variants).
+//! Phase 1: sample browser left, overview right. If static analyzer
+//! features exist for the selected sample, the overview pane shows a
+//! rich breakdown (format/arch, hashes, entropy, sections, imports,
+//! string counts). Otherwise it nudges the user to run
+//! `agat analyze <id>`.
 
-use agat_core::Vault;
+use agat_core::{SampleId, Vault};
+use agat_static::StaticFeatures;
 use agat_store::{Store, StoredSample};
 use anyhow::Result;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers,
+    },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -21,12 +25,21 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap},
     Frame, Terminal,
 };
+use std::collections::HashMap;
 use std::io;
 use std::time::Duration;
 
 pub fn run(_vault: Vault, store: Store) -> Result<()> {
     let samples = store.list_samples()?;
-    let mut app = App::new(samples);
+    let mut static_features: HashMap<SampleId, StaticFeatures> = HashMap::new();
+    for s in &samples {
+        if let Ok(Some(rec)) = store.get_features(&s.sample.id, "static") {
+            if let Ok(sf) = serde_json::from_value::<StaticFeatures>(rec.features) {
+                static_features.insert(s.sample.id, sf);
+            }
+        }
+    }
+    let mut app = App::new(samples, static_features);
 
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -49,16 +62,24 @@ pub fn run(_vault: Vault, store: Store) -> Result<()> {
 
 struct App {
     samples: Vec<StoredSample>,
+    static_features: HashMap<SampleId, StaticFeatures>,
     list_state: ListState,
 }
 
 impl App {
-    fn new(samples: Vec<StoredSample>) -> Self {
+    fn new(
+        samples: Vec<StoredSample>,
+        static_features: HashMap<SampleId, StaticFeatures>,
+    ) -> Self {
         let mut list_state = ListState::default();
         if !samples.is_empty() {
             list_state.select(Some(0));
         }
-        Self { samples, list_state }
+        Self {
+            samples,
+            static_features,
+            list_state,
+        }
     }
 
     fn next(&mut self) {
@@ -87,6 +108,11 @@ impl App {
 
     fn selected(&self) -> Option<&StoredSample> {
         self.list_state.selected().and_then(|i| self.samples.get(i))
+    }
+
+    fn selected_features(&self) -> Option<&StaticFeatures> {
+        self.selected()
+            .and_then(|s| self.static_features.get(&s.sample.id))
     }
 }
 
@@ -125,6 +151,7 @@ fn draw(f: &mut Frame, app: &App) {
         ])
         .split(f.area());
 
+    let analyzed = app.static_features.len();
     let header = Paragraph::new(Line::from(vec![
         Span::styled(
             " agat ",
@@ -135,7 +162,7 @@ fn draw(f: &mut Frame, app: &App) {
         ),
         Span::raw("  "),
         Span::styled(
-            format!("{} samples", app.samples.len()),
+            format!("{} samples · {} analyzed", app.samples.len(), analyzed),
             Style::default().fg(Color::DarkGray),
         ),
     ]));
@@ -155,7 +182,16 @@ fn draw(f: &mut Frame, app: &App) {
         app.samples
             .iter()
             .map(|s| {
+                let has_analysis = app.static_features.contains_key(&s.sample.id);
+                let marker = if has_analysis { "●" } else { "○" };
+                let marker_color = if has_analysis {
+                    Color::Green
+                } else {
+                    Color::DarkGray
+                };
                 ListItem::new(Line::from(vec![
+                    Span::styled(marker, Style::default().fg(marker_color)),
+                    Span::raw(" "),
                     Span::styled(s.sample.id.short(), Style::default().fg(Color::Yellow)),
                     Span::raw("  "),
                     Span::styled(
@@ -174,54 +210,144 @@ fn draw(f: &mut Frame, app: &App) {
     f.render_stateful_widget(list, body[0], &mut state);
 
     let detail_block = Block::default().borders(Borders::ALL).title(" overview ");
-    let detail_text: Vec<Line<'static>> = match app.selected() {
-        Some(s) => vec![
-            kv("sha256", s.sample.id.to_hex()),
-            kv("kind", s.sample.kind.to_string()),
-            kv("size", format!("{} bytes", s.sample.size)),
-            kv(
-                "filename",
-                s.sample
-                    .metadata
-                    .original_filename
-                    .clone()
-                    .unwrap_or_else(|| "-".into()),
-            ),
-            kv(
-                "ingested",
-                s.ingested_at.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
-            ),
-            Line::from(""),
-            Line::from(Span::styled(
-                "Phase 1+ analyzer panes coming. For now agat-tui only shows ingest state.",
-                Style::default()
-                    .fg(Color::DarkGray)
-                    .add_modifier(Modifier::ITALIC),
-            )),
-        ],
-        None => vec![Line::from(Span::styled(
-            "Ingest samples with `agat ingest <path>` to populate the vault.",
-            Style::default().fg(Color::DarkGray),
-        ))],
-    };
+    let detail_text = build_overview(app);
     let detail = Paragraph::new(detail_text)
         .block(detail_block)
         .wrap(Wrap { trim: false });
     f.render_widget(detail, body[1]);
 
     let footer = Paragraph::new(Line::from(vec![
-        Span::styled(
-            " j/k ",
-            Style::default().fg(Color::Black).bg(Color::Gray),
-        ),
+        Span::styled(" j/k ", Style::default().fg(Color::Black).bg(Color::Gray)),
         Span::raw(" navigate    "),
-        Span::styled(
-            " q ",
-            Style::default().fg(Color::Black).bg(Color::Gray),
-        ),
+        Span::styled(" q ", Style::default().fg(Color::Black).bg(Color::Gray)),
         Span::raw(" quit "),
     ]));
     f.render_widget(footer, chunks[2]);
+}
+
+fn build_overview(app: &App) -> Vec<Line<'static>> {
+    let Some(s) = app.selected() else {
+        return vec![Line::from(Span::styled(
+            "Ingest samples with `agat ingest <path>` to populate the vault.",
+            Style::default().fg(Color::DarkGray),
+        ))];
+    };
+
+    let mut lines = vec![
+        kv("sha256", s.sample.id.to_hex()),
+        kv("kind", s.sample.kind.to_string()),
+        kv("size", format!("{} bytes", s.sample.size)),
+        kv(
+            "filename",
+            s.sample
+                .metadata
+                .original_filename
+                .clone()
+                .unwrap_or_else(|| "-".into()),
+        ),
+        kv(
+            "ingested",
+            s.ingested_at.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+        ),
+        Line::from(""),
+    ];
+
+    let Some(f) = app.selected_features() else {
+        lines.push(Line::from(Span::styled(
+            format!(
+                "(no analyzer features yet — run `agat analyze {}`)",
+                s.sample.id.short()
+            ),
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::ITALIC),
+        )));
+        return lines;
+    };
+
+    lines.push(section_header("static analysis"));
+    lines.push(kv(
+        "format",
+        format!("{} / {} / {}-bit", f.parsed.format, f.parsed.arch, f.parsed.bits),
+    ));
+    lines.push(kv("entry", format!("0x{:08x}", f.parsed.entry_point)));
+    lines.push(kv("md5", f.hashes.md5.clone()));
+    if let Some(imphash) = &f.hashes.imphash {
+        lines.push(kv("imphash", imphash.clone()));
+    }
+    lines.push(kv(
+        "entropy",
+        format!(
+            "{:.3} overall · {} high regions",
+            f.entropy.overall,
+            f.entropy.high_entropy_regions.len()
+        ),
+    ));
+    lines.push(kv("strings", format!(
+        "{} ASCII · {} UTF-16LE",
+        f.strings.ascii_count, f.strings.utf16le_count
+    )));
+
+    if !f.parsed.sections.is_empty() {
+        lines.push(Line::from(""));
+        lines.push(section_header(&format!(
+            "sections ({})",
+            f.parsed.sections.len()
+        )));
+        for sect in f.parsed.sections.iter().take(10) {
+            let rwx = format!(
+                "{}{}{}",
+                if sect.characteristics.readable { "R" } else { "-" },
+                if sect.characteristics.writable { "W" } else { "-" },
+                if sect.characteristics.executable {
+                    "X"
+                } else {
+                    "-"
+                },
+            );
+            lines.push(Line::from(format!(
+                "  {:<16} {}  ent {:>4.2}  {:>8} bytes",
+                sect.name, rwx, sect.entropy, sect.file_size
+            )));
+        }
+        if f.parsed.sections.len() > 10 {
+            lines.push(Line::from(format!(
+                "  ... +{} more",
+                f.parsed.sections.len() - 10
+            )));
+        }
+    }
+
+    if !f.parsed.imports.is_empty() {
+        lines.push(Line::from(""));
+        lines.push(section_header(&format!(
+            "imports ({})",
+            f.parsed.imports.len()
+        )));
+        for imp in f.parsed.imports.iter().take(10) {
+            let lib = if imp.library.is_empty() {
+                "<elf>".to_string()
+            } else {
+                imp.library.clone()
+            };
+            lines.push(Line::from(format!("  {}: {}", lib, imp.name)));
+        }
+        if f.parsed.imports.len() > 10 {
+            lines.push(Line::from(format!(
+                "  ... +{} more",
+                f.parsed.imports.len() - 10
+            )));
+        }
+    }
+
+    lines
+}
+
+fn section_header(text: &str) -> Line<'static> {
+    Line::from(Span::styled(
+        format!("── {} ──", text),
+        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+    ))
 }
 
 fn kv(key: &str, value: impl Into<String>) -> Line<'static> {

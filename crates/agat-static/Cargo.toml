@@ -6,7 +6,16 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 rust-version.workspace = true
-description = "Static analysis: parsing, entropy, strings, hashes"
+description = "Static analysis: PE/ELF parsing, entropy, strings, hashes"
 
 [dependencies]
 agat-core.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+md-5.workspace = true
+hex.workspace = true
+goblin.workspace = true
