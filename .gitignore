@@ -1,0 +1,47 @@
+# Internal design / planning docs — not for the public repo
+DESIGN.md
+
+# Rust build artifacts
+target/
+**/*.rs.bk
+Cargo.lock
+
+# Sample vault — never commit malware samples
+samples/
+*.bin
+*.bin.enc
+*.exe
+*.dll
+*.so
+*.elf
+
+# Models — too large for git; fetch separately
+models/
+*.gguf
+*.onnx
+
+# Local config / secrets
+.agat/
+.env
+.env.local
+*.key
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Python (for corpora prep, classifier training)
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# Build / packaging
+dist/
+build/
+*.tar.gz
