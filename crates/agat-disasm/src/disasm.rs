@@ -1,6 +1,6 @@
 //! Linear-sweep and recursive-descent disassembly on top of iced-x86.
 
-use iced_x86::{Decoder, DecoderOptions, FlowControl, Formatter, Instruction, IntelFormatter};
+use iced_x86::{Decoder, DecoderOptions, FlowControl, Formatter, Instruction, IntelFormatter, OpKind};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet, VecDeque};
 
@@ -42,6 +42,15 @@ pub struct DisasmLine {
     /// Direct target of a near branch/jump/call. `None` for fall-
     /// through, returns, indirect transfers, and invalid decodes.
     pub branch_target: Option<u64>,
+    /// First immediate operand, if any. Used by later analyzers
+    /// (notably `agat-poly`) to extract decryptor keys without
+    /// re-parsing the formatted operand string.
+    #[serde(default)]
+    pub immediate: Option<u64>,
+    /// True if the first operand is a memory destination. Distinguishes
+    /// `xor [mem], reg` from `xor reg, [mem]`.
+    #[serde(default)]
+    pub writes_memory: bool,
 }
 
 /// Disassemble `bytes` (mapped at `base_address`) in linear order
@@ -174,6 +183,8 @@ fn make_line(
         }
         _ => None,
     };
+    let immediate = first_immediate(instr);
+    let writes_memory = matches!(instr.op0_kind(), OpKind::Memory) && instr.op_count() >= 1;
     DisasmLine {
         address: ip,
         bytes_hex,
@@ -181,7 +192,27 @@ fn make_line(
         operands,
         flow,
         branch_target,
+        immediate,
+        writes_memory,
     }
+}
+
+fn first_immediate(instr: &Instruction) -> Option<u64> {
+    let n = instr.op_count();
+    for i in 0..n {
+        match instr.op_kind(i) {
+            OpKind::Immediate8 | OpKind::Immediate8_2nd => return Some(instr.immediate(i)),
+            OpKind::Immediate16 | OpKind::Immediate32 | OpKind::Immediate64 => {
+                return Some(instr.immediate(i))
+            }
+            OpKind::Immediate8to16
+            | OpKind::Immediate8to32
+            | OpKind::Immediate8to64
+            | OpKind::Immediate32to64 => return Some(instr.immediate(i)),
+            _ => {}
+        }
+    }
+    None
 }
 
 fn split_mnemonic(formatted: &str) -> (String, String) {

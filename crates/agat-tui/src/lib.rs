@@ -7,6 +7,7 @@
 
 use agat_core::{SampleId, Vault};
 use agat_disasm::{DisasmFeatures, FlowKind};
+use agat_poly::{PolyFeatures, Signal};
 use agat_static::StaticFeatures;
 use agat_store::{Store, StoredSample};
 use anyhow::Result;
@@ -33,6 +34,7 @@ pub fn run(_vault: Vault, store: Store) -> Result<()> {
     let samples = store.list_samples()?;
     let mut static_features: HashMap<SampleId, StaticFeatures> = HashMap::new();
     let mut disasm_features: HashMap<SampleId, DisasmFeatures> = HashMap::new();
+    let mut poly_features: HashMap<SampleId, PolyFeatures> = HashMap::new();
     for s in &samples {
         if let Ok(Some(rec)) = store.get_features(&s.sample.id, "static") {
             if let Ok(sf) = serde_json::from_value::<StaticFeatures>(rec.features) {
@@ -44,8 +46,13 @@ pub fn run(_vault: Vault, store: Store) -> Result<()> {
                 disasm_features.insert(s.sample.id, df);
             }
         }
+        if let Ok(Some(rec)) = store.get_features(&s.sample.id, "poly") {
+            if let Ok(pf) = serde_json::from_value::<PolyFeatures>(rec.features) {
+                poly_features.insert(s.sample.id, pf);
+            }
+        }
     }
-    let mut app = App::new(samples, static_features, disasm_features);
+    let mut app = App::new(samples, static_features, disasm_features, poly_features);
 
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -70,6 +77,7 @@ pub fn run(_vault: Vault, store: Store) -> Result<()> {
 enum Tab {
     Overview,
     Disasm,
+    Poly,
 }
 
 impl Tab {
@@ -77,12 +85,14 @@ impl Tab {
         match self {
             Tab::Overview => 0,
             Tab::Disasm => 1,
+            Tab::Poly => 2,
         }
     }
     fn cycle(self) -> Tab {
         match self {
             Tab::Overview => Tab::Disasm,
-            Tab::Disasm => Tab::Overview,
+            Tab::Disasm => Tab::Poly,
+            Tab::Poly => Tab::Overview,
         }
     }
 }
@@ -91,6 +101,7 @@ struct App {
     samples: Vec<StoredSample>,
     static_features: HashMap<SampleId, StaticFeatures>,
     disasm_features: HashMap<SampleId, DisasmFeatures>,
+    poly_features: HashMap<SampleId, PolyFeatures>,
     list_state: ListState,
     active_tab: Tab,
 }
@@ -100,6 +111,7 @@ impl App {
         samples: Vec<StoredSample>,
         static_features: HashMap<SampleId, StaticFeatures>,
         disasm_features: HashMap<SampleId, DisasmFeatures>,
+        poly_features: HashMap<SampleId, PolyFeatures>,
     ) -> Self {
         let mut list_state = ListState::default();
         if !samples.is_empty() {
@@ -109,6 +121,7 @@ impl App {
             samples,
             static_features,
             disasm_features,
+            poly_features,
             list_state,
             active_tab: Tab::Overview,
         }
@@ -151,6 +164,11 @@ impl App {
         self.selected()
             .and_then(|s| self.disasm_features.get(&s.sample.id))
     }
+
+    fn selected_poly(&self) -> Option<&PolyFeatures> {
+        self.selected()
+            .and_then(|s| self.poly_features.get(&s.sample.id))
+    }
 }
 
 fn run_loop<B: ratatui::backend::Backend>(
@@ -173,6 +191,7 @@ fn run_loop<B: ratatui::backend::Backend>(
                     KeyCode::Up | KeyCode::Char('k') => app.prev(),
                     KeyCode::Char('1') => app.active_tab = Tab::Overview,
                     KeyCode::Char('2') => app.active_tab = Tab::Disasm,
+                    KeyCode::Char('3') => app.active_tab = Tab::Poly,
                     KeyCode::Tab => app.active_tab = app.active_tab.cycle(),
                     _ => {}
                 }
@@ -193,6 +212,11 @@ fn draw(f: &mut Frame, app: &App) {
 
     let analyzed = app.static_features.len();
     let with_disasm = app.disasm_features.len();
+    let poly_hits = app
+        .poly_features
+        .values()
+        .filter(|p| p.is_polymorphic())
+        .count();
     let header = Paragraph::new(Line::from(vec![
         Span::styled(
             " agat ",
@@ -204,10 +228,11 @@ fn draw(f: &mut Frame, app: &App) {
         Span::raw("  "),
         Span::styled(
             format!(
-                "{} samples · {} analyzed · {} disasm",
+                "{} samples · {} analyzed · {} disasm · {} poly-hit",
                 app.samples.len(),
                 analyzed,
-                with_disasm
+                with_disasm,
+                poly_hits
             ),
             Style::default().fg(Color::DarkGray),
         ),
@@ -262,7 +287,11 @@ fn draw(f: &mut Frame, app: &App) {
         .constraints([Constraint::Length(1), Constraint::Min(0)])
         .split(body[1]);
 
-    let tab_titles = vec![Line::from(" Overview "), Line::from(" Disasm ")];
+    let tab_titles = vec![
+        Line::from(" Overview "),
+        Line::from(" Disasm "),
+        Line::from(" Poly "),
+    ];
     let tabs = Tabs::new(tab_titles)
         .select(app.active_tab.index())
         .style(Style::default().fg(Color::DarkGray))
@@ -277,6 +306,7 @@ fn draw(f: &mut Frame, app: &App) {
     let content_lines = match app.active_tab {
         Tab::Overview => build_overview(app),
         Tab::Disasm => build_disasm(app),
+        Tab::Poly => build_poly(app),
     };
     let content_block = Block::default().borders(Borders::ALL);
     let content = Paragraph::new(content_lines)
@@ -287,7 +317,7 @@ fn draw(f: &mut Frame, app: &App) {
     let footer = Paragraph::new(Line::from(vec![
         Span::styled(" j/k ", Style::default().fg(Color::Black).bg(Color::Gray)),
         Span::raw(" navigate    "),
-        Span::styled(" 1/2/Tab ", Style::default().fg(Color::Black).bg(Color::Gray)),
+        Span::styled(" 1/2/3/Tab ", Style::default().fg(Color::Black).bg(Color::Gray)),
         Span::raw(" switch tab    "),
         Span::styled(" q ", Style::default().fg(Color::Black).bg(Color::Gray)),
         Span::raw(" quit "),
@@ -521,6 +551,175 @@ fn build_disasm(app: &App) -> Vec<Line<'static>> {
             ),
             Span::styled(l.operands.clone(), Style::default().fg(Color::White)),
         ]));
+    }
+
+    lines
+}
+
+fn build_poly(app: &App) -> Vec<Line<'static>> {
+    let Some(s) = app.selected() else {
+        return vec![Line::from(Span::styled(
+            "(no sample selected)",
+            Style::default().fg(Color::DarkGray),
+        ))];
+    };
+    let Some(p) = app.selected_poly() else {
+        return vec![Line::from(Span::styled(
+            format!(
+                "(no poly features — run `agat analyze {}`)",
+                s.sample.id.short()
+            ),
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::ITALIC),
+        ))];
+    };
+
+    let verdict_style = if p.is_polymorphic() {
+        Style::default()
+            .fg(Color::Red)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::Green)
+    };
+    let verdict = if p.is_polymorphic() {
+        "LIKELY POLYMORPHIC"
+    } else {
+        "no strong signal"
+    };
+
+    let mut lines = vec![
+        Line::from(vec![
+            Span::styled(
+                format!("{:<11}", "verdict"),
+                Style::default().fg(Color::DarkGray),
+            ),
+            Span::styled(verdict, verdict_style),
+        ]),
+        kv("confidence", format!("{:.2}", p.confidence)),
+        Line::from(""),
+        section_header(&format!("signals ({})", p.signals.len())),
+    ];
+
+    if p.signals.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "  (none)",
+            Style::default().fg(Color::DarkGray),
+        )));
+    } else {
+        for s in &p.signals {
+            match s {
+                Signal::EntropyBoundary {
+                    boundary_offset,
+                    before_entropy,
+                    after_entropy,
+                } => lines.push(Line::from(format!(
+                    "  entropy boundary at 0x{:08x}  {:.2} → {:.2}",
+                    boundary_offset, before_entropy, after_entropy
+                ))),
+                Signal::BackwardJumpInPrelude { from, to } => lines.push(Line::from(format!(
+                    "  backward jump  0x{:08x} → 0x{:08x}",
+                    from, to
+                ))),
+                Signal::DecryptorLoop {
+                    op,
+                    instruction_address,
+                    key,
+                } => {
+                    let key_str = match key {
+                        Some(k) => format!("key 0x{:02x}", k),
+                        None => "key unknown (register source)".to_string(),
+                    };
+                    lines.push(Line::from(vec![
+                        Span::raw("  decryptor loop at "),
+                        Span::styled(
+                            format!("0x{:08x}", instruction_address),
+                            Style::default().fg(Color::Yellow),
+                        ),
+                        Span::raw("  "),
+                        Span::styled(
+                            format!("{} byte", op.label()),
+                            Style::default().fg(Color::Magenta),
+                        ),
+                        Span::raw("  "),
+                        Span::raw(key_str),
+                    ]));
+                }
+            }
+        }
+    }
+
+    if let Some(rec) = &p.recovered {
+        lines.push(Line::from(""));
+        lines.push(section_header("recovered payload"));
+        lines.push(kv(
+            "region",
+            format!(
+                "0x{:08x}..0x{:08x}  ({} bytes)",
+                rec.region_start, rec.region_end, rec.region_size
+            ),
+        ));
+        lines.push(kv(
+            "operation",
+            format!("{} with 0x{:02x}", rec.operation.label(), rec.key),
+        ));
+        lines.push(kv(
+            "entropy",
+            format!(
+                "{:.3} → {:.3}  (drop {:+.3})",
+                rec.original_entropy, rec.decrypted_entropy, -rec.entropy_drop
+            ),
+        ));
+        lines.push(kv("score", format!("{:.2}", rec.recovery_score)));
+        if !rec.preview_hex.is_empty() {
+            lines.push(Line::from(""));
+            lines.push(section_header("hex preview"));
+            for (i, chunk) in rec.preview_hex.as_bytes().chunks(32).enumerate().take(4) {
+                let raw: String = chunk.iter().map(|&b| b as char).collect();
+                let spaced = raw
+                    .as_bytes()
+                    .chunks(2)
+                    .map(|c| std::str::from_utf8(c).unwrap_or(""))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                lines.push(Line::from(vec![
+                    Span::styled(
+                        format!("  0x{:04x}      ", i * 16),
+                        Style::default().fg(Color::DarkGray),
+                    ),
+                    Span::styled(spaced, Style::default().fg(Color::Cyan)),
+                ]));
+            }
+        }
+        if !rec.recovered_strings.is_empty() {
+            lines.push(Line::from(""));
+            lines.push(section_header(&format!(
+                "strings recovered ({})",
+                rec.recovered_strings.len()
+            )));
+            for s in &rec.recovered_strings {
+                let trunc: String = if s.len() > 70 {
+                    format!("{}...", &s[..67])
+                } else {
+                    s.clone()
+                };
+                lines.push(Line::from(vec![
+                    Span::raw("  "),
+                    Span::styled(
+                        format!("{:?}", trunc),
+                        Style::default().fg(Color::Green),
+                    ),
+                ]));
+            }
+        }
+    } else if p.detected_pattern.is_some() {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "(pattern detected but no high-entropy region to decrypt)",
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::ITALIC),
+        )));
     }
 
     lines

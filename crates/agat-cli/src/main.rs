@@ -2,6 +2,7 @@
 
 use agat_core::{AnalysisContext, Analyzer, Sample, SampleId, SampleKind, SampleMetadata, Vault};
 use agat_disasm::{DisasmAnalyzer, DisasmFeatures, FlowKind};
+use agat_poly::{PolyAnalyzer, PolyFeatures, Signal};
 use agat_static::{
     entropy::EntropyCurve, strings::StringEncoding, StaticAnalyzer, StaticFeatures,
 };
@@ -49,6 +50,9 @@ enum Cmd {
         /// Include a disassembly preview at the bottom of the output.
         #[arg(long)]
         disasm: bool,
+        /// Include polymorphic-engine analysis (signals, key, recovered payload).
+        #[arg(long)]
+        poly: bool,
     },
     /// Launch the interactive TUI.
     Tui,
@@ -79,7 +83,7 @@ fn main() -> Result<()> {
         Cmd::Ingest { paths } => cmd_ingest(paths, &vault, &store),
         Cmd::List => cmd_list(&store),
         Cmd::Analyze { id, force } => cmd_analyze(id, force, &vault, &store),
-        Cmd::Show { id, disasm } => cmd_show(id, disasm, &store),
+        Cmd::Show { id, disasm, poly } => cmd_show(id, disasm, poly, &store),
         Cmd::Tui => agat_tui::run(vault, store).context("running tui"),
     }
 }
@@ -199,8 +203,8 @@ fn cmd_analyze(target: Option<String>, force: bool, vault: &Vault, store: &Store
     let analyzers: Vec<Box<dyn Analyzer>> = vec![
         Box::new(StaticAnalyzer::default()),
         Box::new(DisasmAnalyzer::default()),
+        Box::new(PolyAnalyzer),
     ];
-    let ctx = AnalysisContext { vault };
 
     let targets: Vec<StoredSample> = match target {
         Some(input) => {
@@ -222,10 +226,16 @@ fn cmd_analyze(target: Option<String>, force: bool, vault: &Vault, store: &Store
     let mut total_skipped = 0u64;
     for stored in &targets {
         let id = &stored.sample.id;
+        // Fresh context per sample; downstream analyzers read upstream
+        // features from `ctx.previous_features` rather than re-parsing.
+        let mut ctx = AnalysisContext::new(vault);
+
         for analyzer in &analyzers {
             if !force {
                 if let Some(existing) = store.get_features(id, analyzer.name())? {
                     if existing.version == analyzer.version() {
+                        ctx.previous_features
+                            .insert(analyzer.name().to_string(), existing.features);
                         tracing::debug!(
                             sample = %id.short(),
                             analyzer = analyzer.name(),
@@ -236,7 +246,24 @@ fn cmd_analyze(target: Option<String>, force: bool, vault: &Vault, store: &Store
                     }
                 }
             }
+            // Make sure declared dependencies are present in the context.
+            for dep in analyzer.dependencies() {
+                if !ctx.previous_features.contains_key(*dep) {
+                    if let Some(rec) = store.get_features(id, dep)? {
+                        ctx.previous_features.insert((*dep).to_string(), rec.features);
+                    } else {
+                        tracing::warn!(
+                            "analyzer {} requires upstream '{}' which has no features yet",
+                            analyzer.name(),
+                            dep
+                        );
+                    }
+                }
+            }
+
             let bundle = analyzer.analyze(&stored.sample, &ctx)?;
+            ctx.previous_features
+                .insert(analyzer.name().to_string(), bundle.features.clone());
             store.insert_features(id, &bundle)?;
             println!(
                 "analyzed  {}  {} v{}",
@@ -258,13 +285,14 @@ fn cmd_analyze(target: Option<String>, force: bool, vault: &Vault, store: &Store
     Ok(())
 }
 
-fn cmd_show(input: String, disasm: bool, store: &Store) -> Result<()> {
+fn cmd_show(input: String, disasm: bool, poly: bool, store: &Store) -> Result<()> {
     let id = resolve_sample_id(&input, store)?;
     let stored = store
         .get_sample(&id)?
         .ok_or_else(|| anyhow::anyhow!("sample {} not found", id.short()))?;
     let static_rec = store.get_features(&id, "static")?;
     let disasm_rec = store.get_features(&id, "disasm")?;
+    let poly_rec = store.get_features(&id, "poly")?;
 
     println!(
         "{}  {}",
@@ -306,6 +334,19 @@ fn cmd_show(input: String, disasm: bool, store: &Store) -> Result<()> {
                 let df: DisasmFeatures = serde_json::from_value(rec.features)
                     .context("decoding disasm features")?;
                 print_disasm_features(&df);
+            }
+        }
+    }
+    if poly {
+        match poly_rec {
+            None => println!(
+                "\n(no poly features yet — run `agat analyze {} --force`)",
+                id.short()
+            ),
+            Some(rec) => {
+                let pf: PolyFeatures =
+                    serde_json::from_value(rec.features).context("decoding poly features")?;
+                print_poly_features(&pf);
             }
         }
     }
@@ -470,6 +511,98 @@ fn print_disasm_features(df: &DisasmFeatures) {
             "  0x{:08x}  {}  {:<8}{}{}",
             l.address, bytes_col, l.mnemonic, l.operands, flow_marker
         );
+    }
+}
+
+fn print_poly_features(p: &PolyFeatures) {
+    println!("\npolymorphic-engine analysis");
+    println!("  confidence  {:.2}", p.confidence);
+    let verdict = if p.is_polymorphic() {
+        "LIKELY POLYMORPHIC"
+    } else {
+        "no strong signal"
+    };
+    println!("  verdict     {}", verdict);
+
+    if p.signals.is_empty() {
+        println!("  (no signals)");
+    } else {
+        println!("  signals:");
+        for s in &p.signals {
+            match s {
+                Signal::EntropyBoundary {
+                    boundary_offset,
+                    before_entropy,
+                    after_entropy,
+                } => println!(
+                    "    entropy boundary at 0x{:08x}  {:.2} → {:.2}",
+                    boundary_offset, before_entropy, after_entropy
+                ),
+                Signal::BackwardJumpInPrelude { from, to } => println!(
+                    "    backward jump at 0x{:08x} → 0x{:08x}",
+                    from, to
+                ),
+                Signal::DecryptorLoop {
+                    op,
+                    instruction_address,
+                    key,
+                } => match key {
+                    Some(k) => println!(
+                        "    decryptor loop at 0x{:08x}  {} byte  key 0x{:02x}",
+                        instruction_address,
+                        op.label(),
+                        k
+                    ),
+                    None => println!(
+                        "    decryptor loop at 0x{:08x}  {} byte  key unknown (register source)",
+                        instruction_address,
+                        op.label()
+                    ),
+                },
+            }
+        }
+    }
+
+    if let Some(rec) = &p.recovered {
+        println!("\nrecovered payload");
+        println!(
+            "  region      0x{:08x}..0x{:08x}  ({} bytes)",
+            rec.region_start, rec.region_end, rec.region_size
+        );
+        println!("  operation   {} with 0x{:02x}", rec.operation.label(), rec.key);
+        println!(
+            "  entropy     {:.3} → {:.3}  (drop {:+.3})",
+            rec.original_entropy, rec.decrypted_entropy, -rec.entropy_drop
+        );
+        println!("  score       {:.2}", rec.recovery_score);
+        if !rec.preview_hex.is_empty() {
+            // Show as classic xxd-style: 16 bytes per line, max 4 lines.
+            let bytes_per_row = 32; // 32 hex chars = 16 bytes
+            for (i, chunk) in rec.preview_hex.as_bytes().chunks(bytes_per_row).enumerate().take(4)
+            {
+                let line: String = chunk.iter().map(|&b| b as char).collect();
+                let spaced = line
+                    .as_bytes()
+                    .chunks(2)
+                    .map(|c| std::str::from_utf8(c).unwrap_or(""))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                println!("  0x{:04x}      {}", i * 16, spaced);
+            }
+        }
+        if !rec.recovered_strings.is_empty() {
+            println!("  strings:");
+            for s in &rec.recovered_strings {
+                let truncated: String = if s.len() > 70 {
+                    format!("{}...", &s[..67])
+                } else {
+                    s.clone()
+                };
+                println!("    {:?}", truncated);
+            }
+        }
+    } else if p.detected_pattern.is_some() {
+        println!("\n  (pattern detected but no high-entropy region to decrypt)");
     }
 }
 

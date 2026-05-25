@@ -1,11 +1,25 @@
 use crate::{Result, Sample};
 use serde_json::Value;
+use std::collections::HashMap;
 
 /// Per-run context handed to each [`Analyzer`]. Holds references to
-/// shared infrastructure that analyzers may need (the vault for
-/// raw-byte access, a store handle in the future, etc.).
+/// shared infrastructure analyzers need: the vault for raw-byte
+/// access, plus a map of *already-computed* feature bundles from
+/// upstream analyzers in the same pipeline run. Phase 3+ analyzers
+/// (e.g. `poly` → needs `static` and `disasm`) read from this map
+/// instead of re-doing upstream work.
 pub struct AnalysisContext<'a> {
     pub vault: &'a crate::Vault,
+    pub previous_features: HashMap<String, Value>,
+}
+
+impl<'a> AnalysisContext<'a> {
+    pub fn new(vault: &'a crate::Vault) -> Self {
+        Self {
+            vault,
+            previous_features: HashMap::new(),
+        }
+    }
 }
 
 /// A binary blob emitted by an analyzer alongside its structured
