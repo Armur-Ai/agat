@@ -4,6 +4,7 @@
 use crate::detect::{DecryptorPattern, Operation};
 use agat_static::{entropy::shannon_entropy, strings::extract_ascii, StaticFeatures};
 use serde::{Deserialize, Serialize};
+use sha2::Digest;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecoveredPayload {
@@ -21,6 +22,13 @@ pub struct RecoveredPayload {
     /// often the "tell" that recovery worked.
     pub recovered_strings: Vec<String>,
     pub recovery_score: f64,
+    /// 16-char hex hash of the sorted set of recovered strings ≥10
+    /// chars. Used by `agat divergence` to group samples that
+    /// recovered the same logical plaintext (even if they used
+    /// different decryptor implementations). Empty when no
+    /// long-enough strings came out of recovery.
+    #[serde(default)]
+    pub plaintext_fingerprint: String,
 }
 
 /// Attempt to recover the payload described by `pattern` against
@@ -53,6 +61,7 @@ pub fn try_recover(
         strings.iter().take(8).map(|s| s.value.clone()).collect();
     let preview_hex = hex::encode(&decrypted[..decrypted.len().min(128)]);
     let recovery_score = score_recovery(entropy_drop, &recovered_strings);
+    let plaintext_fingerprint = fingerprint_plaintext(&strings.iter().map(|s| s.value.clone()).collect::<Vec<_>>());
 
     Some(RecoveredPayload {
         region_start,
@@ -66,7 +75,29 @@ pub fn try_recover(
         preview_hex,
         recovered_strings,
         recovery_score,
+        plaintext_fingerprint,
     })
+}
+
+/// Hash the sorted set of recovered strings (filtered to ≥10 chars to
+/// suppress random-byte noise) into a short hex token. Two samples
+/// that decrypted to the same logical plaintext will share a
+/// fingerprint, even when their decryptor implementations differ
+/// wildly — which is exactly the cross-sample signal `agat divergence`
+/// relies on to flag AI-rewritten variants.
+fn fingerprint_plaintext(strings: &[String]) -> String {
+    let mut filtered: Vec<&str> = strings
+        .iter()
+        .filter(|s| s.len() >= 10)
+        .map(|s| s.as_str())
+        .collect();
+    if filtered.is_empty() {
+        return String::new();
+    }
+    filtered.sort();
+    let joined = filtered.join("|");
+    let h = sha2::Sha256::digest(joined.as_bytes());
+    hex::encode(&h[..8])
 }
 
 /// Pick the byte range to attempt decryption on. Strategy:

@@ -15,6 +15,7 @@ agat-static.workspace = true
 agat-disasm.workspace = true
 agat-poly.workspace = true
 agat-meta.workspace = true
+agat-ai.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
 serde.workspace = true

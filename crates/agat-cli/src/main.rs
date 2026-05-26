@@ -1,5 +1,6 @@
 //! agat command-line entry point.
 
+use agat_ai::{AiAnalyzer, AiFeatures};
 use agat_core::{AnalysisContext, Analyzer, Sample, SampleId, SampleKind, SampleMetadata, Vault};
 use agat_disasm::{DisasmAnalyzer, DisasmFeatures, FlowKind};
 use agat_meta::{MetaAnalyzer, MetaFeatures};
@@ -10,7 +11,7 @@ use agat_static::{
 use agat_store::{Store, StoredSample};
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -58,9 +59,17 @@ enum Cmd {
         /// Include metamorphic canonical form and CFG fingerprint.
         #[arg(long)]
         meta: bool,
+        /// Include AI-signal analysis (artifacts, stylometry, verdict).
+        #[arg(long)]
+        ai: bool,
     },
     /// Group samples by metamorphic CFG fingerprint.
     Cluster,
+    /// Cross-sample divergence analysis: flag samples that share a
+    /// recovered-plaintext family but have a different CFG fingerprint
+    /// from the rest of the family. This is the algorithm-substitution
+    /// signature of LLM rewriting.
+    Divergence,
     /// Launch the interactive TUI.
     Tui,
 }
@@ -95,8 +104,10 @@ fn main() -> Result<()> {
             disasm,
             poly,
             meta,
-        } => cmd_show(id, disasm, poly, meta, &store),
+            ai,
+        } => cmd_show(id, disasm, poly, meta, ai, &store),
         Cmd::Cluster => cmd_cluster(&store),
+        Cmd::Divergence => cmd_divergence(&store),
         Cmd::Tui => agat_tui::run(vault, store).context("running tui"),
     }
 }
@@ -218,6 +229,7 @@ fn cmd_analyze(target: Option<String>, force: bool, vault: &Vault, store: &Store
         Box::new(DisasmAnalyzer::default()),
         Box::new(PolyAnalyzer),
         Box::new(MetaAnalyzer::default()),
+        Box::new(AiAnalyzer),
     ];
 
     let targets: Vec<StoredSample> = match target {
@@ -299,7 +311,14 @@ fn cmd_analyze(target: Option<String>, force: bool, vault: &Vault, store: &Store
     Ok(())
 }
 
-fn cmd_show(input: String, disasm: bool, poly: bool, meta: bool, store: &Store) -> Result<()> {
+fn cmd_show(
+    input: String,
+    disasm: bool,
+    poly: bool,
+    meta: bool,
+    ai: bool,
+    store: &Store,
+) -> Result<()> {
     let id = resolve_sample_id(&input, store)?;
     let stored = store
         .get_sample(&id)?
@@ -308,6 +327,7 @@ fn cmd_show(input: String, disasm: bool, poly: bool, meta: bool, store: &Store) 
     let disasm_rec = store.get_features(&id, "disasm")?;
     let poly_rec = store.get_features(&id, "poly")?;
     let meta_rec = store.get_features(&id, "meta")?;
+    let ai_rec = store.get_features(&id, "ai")?;
 
     println!(
         "{}  {}",
@@ -377,6 +397,147 @@ fn cmd_show(input: String, disasm: bool, poly: bool, meta: bool, store: &Store) 
                 print_meta_features(&mf, store, &id)?;
             }
         }
+    }
+    if ai {
+        match ai_rec {
+            None => println!(
+                "\n(no ai features yet — run `agat analyze {} --force`)",
+                id.short()
+            ),
+            Some(rec) => {
+                let af: AiFeatures =
+                    serde_json::from_value(rec.features).context("decoding ai features")?;
+                print_ai_features(&af);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn cmd_divergence(store: &Store) -> Result<()> {
+    let samples = store.list_samples()?;
+    if samples.is_empty() {
+        eprintln!("no samples in store");
+        return Ok(());
+    }
+
+    // Gather (sample, plaintext_fp, meta_fp, ai_score) for every sample.
+    struct Row {
+        sample: StoredSample,
+        plaintext_fp: Option<String>,
+        meta_fp: Option<String>,
+        ai_score: Option<f64>,
+    }
+    let mut rows = Vec::new();
+    for s in samples {
+        let poly = store.get_features(&s.sample.id, "poly")?;
+        let meta = store.get_features(&s.sample.id, "meta")?;
+        let ai = store.get_features(&s.sample.id, "ai")?;
+        let plaintext_fp = poly.and_then(|r| {
+            serde_json::from_value::<PolyFeatures>(r.features)
+                .ok()
+                .and_then(|p| p.recovered.map(|r| r.plaintext_fingerprint))
+                .filter(|s: &String| !s.is_empty())
+        });
+        let meta_fp = meta.and_then(|r| {
+            serde_json::from_value::<MetaFeatures>(r.features)
+                .ok()
+                .map(|m| m.cfg_fingerprint)
+                .filter(|s: &String| !s.is_empty())
+        });
+        let ai_score = ai.and_then(|r| {
+            serde_json::from_value::<AiFeatures>(r.features)
+                .ok()
+                .map(|a| a.combined_score)
+        });
+        rows.push(Row {
+            sample: s,
+            plaintext_fp,
+            meta_fp,
+            ai_score,
+        });
+    }
+
+    // Group rows by plaintext fingerprint.
+    let mut groups: HashMap<String, Vec<&Row>> = HashMap::new();
+    for r in &rows {
+        if let Some(pfp) = &r.plaintext_fp {
+            groups.entry(pfp.clone()).or_default().push(r);
+        }
+    }
+
+    let mut groups_vec: Vec<(String, Vec<&Row>)> = groups.into_iter().collect();
+    groups_vec.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
+
+    let mut any_divergence = false;
+    for (pfp, members) in &groups_vec {
+        let meta_fps: HashSet<String> = members
+            .iter()
+            .filter_map(|r| r.meta_fp.clone())
+            .collect();
+        if members.len() < 2 || meta_fps.len() < 2 {
+            continue;
+        }
+        any_divergence = true;
+        println!(
+            "\nPolymorphic family {} ({} samples, {} distinct CFG)",
+            &pfp[..pfp.len().min(16)],
+            members.len(),
+            meta_fps.len()
+        );
+        // Determine the "majority" CFG fingerprint — the one most
+        // samples in this family share. Divergent samples are those
+        // whose CFG differs from the majority.
+        let mut fp_counts: HashMap<String, usize> = HashMap::new();
+        for r in members.iter() {
+            if let Some(m) = &r.meta_fp {
+                *fp_counts.entry(m.clone()).or_insert(0) += 1;
+            }
+        }
+        let majority_fp = fp_counts
+            .iter()
+            .max_by_key(|(_, c)| *c)
+            .map(|(fp, _)| fp.clone());
+        for r in members.iter() {
+            let cfg = r.meta_fp.as_deref().unwrap_or("-");
+            let is_divergent = match (&r.meta_fp, &majority_fp) {
+                (Some(m), Some(maj)) => m != maj,
+                _ => false,
+            };
+            let ai = r
+                .ai_score
+                .map(|s| format!("ai {:.2}", s))
+                .unwrap_or_else(|| "ai  -  ".to_string());
+            let prefix = if is_divergent { "  ★" } else { "   " };
+            let suffix = if is_divergent {
+                "  ← divergent"
+            } else {
+                ""
+            };
+            println!(
+                "{}  {}  cfg {:<16}  {}  {}{}",
+                prefix,
+                r.sample.sample.id.short(),
+                &cfg[..cfg.len().min(16)],
+                ai,
+                r.sample
+                    .sample
+                    .metadata
+                    .original_filename
+                    .as_deref()
+                    .unwrap_or("-"),
+                suffix,
+            );
+        }
+        println!(
+            "\n  Algorithm substitution within a single plaintext family is the\n  \
+             signature of LLM-rewritten malware — classical polymorphic and\n  \
+             metamorphic engines never produce this pattern."
+        );
+    }
+
+    if !any_divergence {
+        println!("no divergence detected — all plaintext families share one CFG fingerprint.");
     }
     Ok(())
 }
@@ -698,6 +859,48 @@ fn print_poly_features(p: &PolyFeatures) {
         }
     } else if p.detected_pattern.is_some() {
         println!("\n  (pattern detected but no high-entropy region to decrypt)");
+    }
+}
+
+fn print_ai_features(a: &AiFeatures) {
+    println!("\nAI-signal analysis");
+    println!("  combined score   {:.2}", a.combined_score);
+    let verdict = if a.is_ai_rewritten() {
+        "LIKELY AI-REWRITTEN"
+    } else {
+        "no strong AI signal"
+    };
+    println!("  verdict          {}", verdict);
+    println!(
+        "  signals:  stylometry {:.2}  ·  artifact-scan {:.2}",
+        a.signal_scores.stylometry, a.signal_scores.artifact_scan
+    );
+
+    if !a.artifacts.is_empty() {
+        println!("\n  artifacts ({})", a.artifacts.len());
+        for hit in &a.artifacts {
+            println!(
+                "    [{}]  {}  @ 0x{:08x}",
+                hit.category.label(),
+                hit.rule_name,
+                hit.offset
+            );
+        }
+    }
+
+    let s = &a.stylometry;
+    println!("\n  stylometry");
+    println!("    opcode diversity     {:.3} bits", s.opcode_diversity);
+    println!("    mean block size      {:.2} instructions", s.mean_block_size);
+    println!("    mean string length   {:.1} chars", s.mean_string_length);
+    println!("    underscore density   {:.3}", s.underscore_density);
+    println!("    long strings (>30)   {}", s.long_string_count);
+    if !s.llm_idiom_hits.is_empty() {
+        println!("\n  LLM idioms ({})", s.llm_idiom_hits.len());
+        for hit in s.llm_idiom_hits.iter().take(10) {
+            let ctx_trim: String = hit.context.chars().take(60).collect();
+            println!("    {}  →  {:?}", hit.idiom, ctx_trim);
+        }
     }
 }
 

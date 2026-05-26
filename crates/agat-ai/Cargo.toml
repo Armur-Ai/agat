@@ -10,3 +10,10 @@ description = "AI-signal detectors for LLM-rewritten malware variants"
 
 [dependencies]
 agat-core.workspace = true
+agat-static.workspace = true
+agat-disasm.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+serde.workspace = true
+serde_json.workspace = true

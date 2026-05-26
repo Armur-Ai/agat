@@ -5,6 +5,7 @@
 //! pane shows arch/section info and the first ~40 instructions of
 //! the listing, colored by control-flow kind.
 
+use agat_ai::AiFeatures;
 use agat_core::{SampleId, Vault};
 use agat_disasm::{DisasmFeatures, FlowKind};
 use agat_meta::MetaFeatures;
@@ -37,6 +38,7 @@ pub fn run(_vault: Vault, store: Store) -> Result<()> {
     let mut disasm_features: HashMap<SampleId, DisasmFeatures> = HashMap::new();
     let mut poly_features: HashMap<SampleId, PolyFeatures> = HashMap::new();
     let mut meta_features: HashMap<SampleId, MetaFeatures> = HashMap::new();
+    let mut ai_features: HashMap<SampleId, AiFeatures> = HashMap::new();
     for s in &samples {
         if let Ok(Some(rec)) = store.get_features(&s.sample.id, "static") {
             if let Ok(sf) = serde_json::from_value::<StaticFeatures>(rec.features) {
@@ -58,6 +60,11 @@ pub fn run(_vault: Vault, store: Store) -> Result<()> {
                 meta_features.insert(s.sample.id, mf);
             }
         }
+        if let Ok(Some(rec)) = store.get_features(&s.sample.id, "ai") {
+            if let Ok(af) = serde_json::from_value::<AiFeatures>(rec.features) {
+                ai_features.insert(s.sample.id, af);
+            }
+        }
     }
     let mut app = App::new(
         samples,
@@ -65,6 +72,7 @@ pub fn run(_vault: Vault, store: Store) -> Result<()> {
         disasm_features,
         poly_features,
         meta_features,
+        ai_features,
     );
 
     enable_raw_mode()?;
@@ -92,6 +100,7 @@ enum Tab {
     Disasm,
     Poly,
     Meta,
+    Ai,
 }
 
 impl Tab {
@@ -101,6 +110,7 @@ impl Tab {
             Tab::Disasm => 1,
             Tab::Poly => 2,
             Tab::Meta => 3,
+            Tab::Ai => 4,
         }
     }
     fn cycle(self) -> Tab {
@@ -108,7 +118,8 @@ impl Tab {
             Tab::Overview => Tab::Disasm,
             Tab::Disasm => Tab::Poly,
             Tab::Poly => Tab::Meta,
-            Tab::Meta => Tab::Overview,
+            Tab::Meta => Tab::Ai,
+            Tab::Ai => Tab::Overview,
         }
     }
 }
@@ -119,6 +130,7 @@ struct App {
     disasm_features: HashMap<SampleId, DisasmFeatures>,
     poly_features: HashMap<SampleId, PolyFeatures>,
     meta_features: HashMap<SampleId, MetaFeatures>,
+    ai_features: HashMap<SampleId, AiFeatures>,
     list_state: ListState,
     active_tab: Tab,
 }
@@ -130,6 +142,7 @@ impl App {
         disasm_features: HashMap<SampleId, DisasmFeatures>,
         poly_features: HashMap<SampleId, PolyFeatures>,
         meta_features: HashMap<SampleId, MetaFeatures>,
+        ai_features: HashMap<SampleId, AiFeatures>,
     ) -> Self {
         let mut list_state = ListState::default();
         if !samples.is_empty() {
@@ -141,6 +154,7 @@ impl App {
             disasm_features,
             poly_features,
             meta_features,
+            ai_features,
             list_state,
             active_tab: Tab::Overview,
         }
@@ -194,6 +208,11 @@ impl App {
             .and_then(|s| self.meta_features.get(&s.sample.id))
     }
 
+    fn selected_ai(&self) -> Option<&AiFeatures> {
+        self.selected()
+            .and_then(|s| self.ai_features.get(&s.sample.id))
+    }
+
     /// Other samples that share this sample's CFG fingerprint.
     fn meta_cluster(&self, this: SampleId) -> Vec<&StoredSample> {
         let Some(this_meta) = self.meta_features.get(&this) else {
@@ -239,6 +258,7 @@ fn run_loop<B: ratatui::backend::Backend>(
                     KeyCode::Char('2') => app.active_tab = Tab::Disasm,
                     KeyCode::Char('3') => app.active_tab = Tab::Poly,
                     KeyCode::Char('4') => app.active_tab = Tab::Meta,
+                    KeyCode::Char('5') => app.active_tab = Tab::Ai,
                     KeyCode::Tab => app.active_tab = app.active_tab.cycle(),
                     _ => {}
                 }
@@ -348,6 +368,7 @@ fn draw(f: &mut Frame, app: &App) {
         Line::from(" Disasm "),
         Line::from(" Poly "),
         Line::from(" Meta "),
+        Line::from(" AI "),
     ];
     let tabs = Tabs::new(tab_titles)
         .select(app.active_tab.index())
@@ -365,6 +386,7 @@ fn draw(f: &mut Frame, app: &App) {
         Tab::Disasm => build_disasm(app),
         Tab::Poly => build_poly(app),
         Tab::Meta => build_meta(app),
+        Tab::Ai => build_ai(app),
     };
     let content_block = Block::default().borders(Borders::ALL);
     let content = Paragraph::new(content_lines)
@@ -375,7 +397,7 @@ fn draw(f: &mut Frame, app: &App) {
     let footer = Paragraph::new(Line::from(vec![
         Span::styled(" j/k ", Style::default().fg(Color::Black).bg(Color::Gray)),
         Span::raw(" navigate    "),
-        Span::styled(" 1/2/3/4/Tab ", Style::default().fg(Color::Black).bg(Color::Gray)),
+        Span::styled(" 1/2/3/4/5/Tab ", Style::default().fg(Color::Black).bg(Color::Gray)),
         Span::raw(" switch tab    "),
         Span::styled(" q ", Style::default().fg(Color::Black).bg(Color::Gray)),
         Span::raw(" quit "),
@@ -913,6 +935,127 @@ fn build_meta(app: &App) -> Vec<Line<'static>> {
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(c.operands.clone(), Style::default().fg(Color::White)),
+            ]));
+        }
+    }
+
+    lines
+}
+
+fn build_ai(app: &App) -> Vec<Line<'static>> {
+    let Some(s) = app.selected() else {
+        return vec![Line::from(Span::styled(
+            "(no sample selected)",
+            Style::default().fg(Color::DarkGray),
+        ))];
+    };
+    let Some(a) = app.selected_ai() else {
+        return vec![Line::from(Span::styled(
+            format!(
+                "(no AI features — run `agat analyze {}`)",
+                s.sample.id.short()
+            ),
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::ITALIC),
+        ))];
+    };
+
+    let (verdict, verdict_color) = if a.is_ai_rewritten() {
+        ("LIKELY AI-REWRITTEN", Color::Red)
+    } else {
+        ("no strong AI signal", Color::Green)
+    };
+
+    let mut lines = vec![
+        Line::from(vec![
+            Span::styled(
+                format!("{:<14}", "verdict"),
+                Style::default().fg(Color::DarkGray),
+            ),
+            Span::styled(
+                verdict,
+                Style::default()
+                    .fg(verdict_color)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]),
+        kv("combined", format!("{:.2}", a.combined_score)),
+        kv(
+            "stylometry",
+            format!("{:.2}", a.signal_scores.stylometry),
+        ),
+        kv(
+            "artifacts",
+            format!("{:.2}", a.signal_scores.artifact_scan),
+        ),
+    ];
+
+    if !a.artifacts.is_empty() {
+        lines.push(Line::from(""));
+        lines.push(section_header(&format!(
+            "artifacts ({})",
+            a.artifacts.len()
+        )));
+        for hit in a.artifacts.iter().take(15) {
+            lines.push(Line::from(vec![
+                Span::raw("  "),
+                Span::styled(
+                    format!("[{:<14}]", hit.category.label()),
+                    Style::default().fg(Color::Magenta),
+                ),
+                Span::raw("  "),
+                Span::styled(hit.rule_name.clone(), Style::default().fg(Color::Yellow)),
+                Span::styled(
+                    format!("  @ 0x{:08x}", hit.offset),
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ]));
+        }
+    }
+
+    let s = &a.stylometry;
+    lines.push(Line::from(""));
+    lines.push(section_header("stylometry"));
+    lines.push(kv(
+        "  opcode div",
+        format!("{:.3} bits", s.opcode_diversity),
+    ));
+    lines.push(kv(
+        "  mean block",
+        format!("{:.2} ins", s.mean_block_size),
+    ));
+    lines.push(kv(
+        "  mean strlen",
+        format!("{:.1} chars", s.mean_string_length),
+    ));
+    lines.push(kv(
+        "  underscore",
+        format!("{:.3}", s.underscore_density),
+    ));
+    lines.push(kv("  long strs", format!("{}", s.long_string_count)));
+
+    if !s.llm_idiom_hits.is_empty() {
+        lines.push(Line::from(""));
+        lines.push(section_header(&format!(
+            "LLM idioms ({})",
+            s.llm_idiom_hits.len()
+        )));
+        for hit in s.llm_idiom_hits.iter().take(10) {
+            let ctx_trim: String = hit.context.chars().take(56).collect();
+            lines.push(Line::from(vec![
+                Span::raw("  "),
+                Span::styled(
+                    hit.idiom.clone(),
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::raw("  →  "),
+                Span::styled(
+                    format!("{:?}", ctx_trim),
+                    Style::default().fg(Color::White),
+                ),
             ]));
         }
     }
