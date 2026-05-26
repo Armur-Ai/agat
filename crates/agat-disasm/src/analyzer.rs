@@ -20,7 +20,10 @@ impl Default for DisasmAnalyzer {
     fn default() -> Self {
         Self {
             max_instructions: 50_000,
-            listing_preview_size: 256,
+            // Phase 4 (`agat-meta`) consumes the listing, not just the
+            // first N entries, so keep the persisted slice large enough
+            // to cover small/medium binaries fully.
+            listing_preview_size: 2_000,
             histogram_top_k: 32,
         }
     }

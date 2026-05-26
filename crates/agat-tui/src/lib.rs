@@ -7,6 +7,7 @@
 
 use agat_core::{SampleId, Vault};
 use agat_disasm::{DisasmFeatures, FlowKind};
+use agat_meta::MetaFeatures;
 use agat_poly::{PolyFeatures, Signal};
 use agat_static::StaticFeatures;
 use agat_store::{Store, StoredSample};
@@ -35,6 +36,7 @@ pub fn run(_vault: Vault, store: Store) -> Result<()> {
     let mut static_features: HashMap<SampleId, StaticFeatures> = HashMap::new();
     let mut disasm_features: HashMap<SampleId, DisasmFeatures> = HashMap::new();
     let mut poly_features: HashMap<SampleId, PolyFeatures> = HashMap::new();
+    let mut meta_features: HashMap<SampleId, MetaFeatures> = HashMap::new();
     for s in &samples {
         if let Ok(Some(rec)) = store.get_features(&s.sample.id, "static") {
             if let Ok(sf) = serde_json::from_value::<StaticFeatures>(rec.features) {
@@ -51,8 +53,19 @@ pub fn run(_vault: Vault, store: Store) -> Result<()> {
                 poly_features.insert(s.sample.id, pf);
             }
         }
+        if let Ok(Some(rec)) = store.get_features(&s.sample.id, "meta") {
+            if let Ok(mf) = serde_json::from_value::<MetaFeatures>(rec.features) {
+                meta_features.insert(s.sample.id, mf);
+            }
+        }
     }
-    let mut app = App::new(samples, static_features, disasm_features, poly_features);
+    let mut app = App::new(
+        samples,
+        static_features,
+        disasm_features,
+        poly_features,
+        meta_features,
+    );
 
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -78,6 +91,7 @@ enum Tab {
     Overview,
     Disasm,
     Poly,
+    Meta,
 }
 
 impl Tab {
@@ -86,13 +100,15 @@ impl Tab {
             Tab::Overview => 0,
             Tab::Disasm => 1,
             Tab::Poly => 2,
+            Tab::Meta => 3,
         }
     }
     fn cycle(self) -> Tab {
         match self {
             Tab::Overview => Tab::Disasm,
             Tab::Disasm => Tab::Poly,
-            Tab::Poly => Tab::Overview,
+            Tab::Poly => Tab::Meta,
+            Tab::Meta => Tab::Overview,
         }
     }
 }
@@ -102,6 +118,7 @@ struct App {
     static_features: HashMap<SampleId, StaticFeatures>,
     disasm_features: HashMap<SampleId, DisasmFeatures>,
     poly_features: HashMap<SampleId, PolyFeatures>,
+    meta_features: HashMap<SampleId, MetaFeatures>,
     list_state: ListState,
     active_tab: Tab,
 }
@@ -112,6 +129,7 @@ impl App {
         static_features: HashMap<SampleId, StaticFeatures>,
         disasm_features: HashMap<SampleId, DisasmFeatures>,
         poly_features: HashMap<SampleId, PolyFeatures>,
+        meta_features: HashMap<SampleId, MetaFeatures>,
     ) -> Self {
         let mut list_state = ListState::default();
         if !samples.is_empty() {
@@ -122,6 +140,7 @@ impl App {
             static_features,
             disasm_features,
             poly_features,
+            meta_features,
             list_state,
             active_tab: Tab::Overview,
         }
@@ -169,6 +188,33 @@ impl App {
         self.selected()
             .and_then(|s| self.poly_features.get(&s.sample.id))
     }
+
+    fn selected_meta(&self) -> Option<&MetaFeatures> {
+        self.selected()
+            .and_then(|s| self.meta_features.get(&s.sample.id))
+    }
+
+    /// Other samples that share this sample's CFG fingerprint.
+    fn meta_cluster(&self, this: SampleId) -> Vec<&StoredSample> {
+        let Some(this_meta) = self.meta_features.get(&this) else {
+            return vec![];
+        };
+        if !this_meta.has_fingerprint() {
+            return vec![];
+        }
+        let mut out = Vec::new();
+        for s in &self.samples {
+            if s.sample.id == this {
+                continue;
+            }
+            if let Some(m) = self.meta_features.get(&s.sample.id) {
+                if m.cfg_fingerprint == this_meta.cfg_fingerprint {
+                    out.push(s);
+                }
+            }
+        }
+        out
+    }
 }
 
 fn run_loop<B: ratatui::backend::Backend>(
@@ -192,6 +238,7 @@ fn run_loop<B: ratatui::backend::Backend>(
                     KeyCode::Char('1') => app.active_tab = Tab::Overview,
                     KeyCode::Char('2') => app.active_tab = Tab::Disasm,
                     KeyCode::Char('3') => app.active_tab = Tab::Poly,
+                    KeyCode::Char('4') => app.active_tab = Tab::Meta,
                     KeyCode::Tab => app.active_tab = app.active_tab.cycle(),
                     _ => {}
                 }
@@ -217,6 +264,14 @@ fn draw(f: &mut Frame, app: &App) {
         .values()
         .filter(|p| p.is_polymorphic())
         .count();
+    // Count distinct meta fingerprints (treats families)
+    let mut seen_fps = std::collections::HashSet::new();
+    let mut families = 0;
+    for m in app.meta_features.values() {
+        if m.has_fingerprint() && seen_fps.insert(m.cfg_fingerprint.clone()) {
+            families += 1;
+        }
+    }
     let header = Paragraph::new(Line::from(vec![
         Span::styled(
             " agat ",
@@ -228,11 +283,12 @@ fn draw(f: &mut Frame, app: &App) {
         Span::raw("  "),
         Span::styled(
             format!(
-                "{} samples · {} analyzed · {} disasm · {} poly-hit",
+                "{} samples · {} analyzed · {} disasm · {} poly-hit · {} families",
                 app.samples.len(),
                 analyzed,
                 with_disasm,
-                poly_hits
+                poly_hits,
+                families
             ),
             Style::default().fg(Color::DarkGray),
         ),
@@ -291,6 +347,7 @@ fn draw(f: &mut Frame, app: &App) {
         Line::from(" Overview "),
         Line::from(" Disasm "),
         Line::from(" Poly "),
+        Line::from(" Meta "),
     ];
     let tabs = Tabs::new(tab_titles)
         .select(app.active_tab.index())
@@ -307,6 +364,7 @@ fn draw(f: &mut Frame, app: &App) {
         Tab::Overview => build_overview(app),
         Tab::Disasm => build_disasm(app),
         Tab::Poly => build_poly(app),
+        Tab::Meta => build_meta(app),
     };
     let content_block = Block::default().borders(Borders::ALL);
     let content = Paragraph::new(content_lines)
@@ -317,7 +375,7 @@ fn draw(f: &mut Frame, app: &App) {
     let footer = Paragraph::new(Line::from(vec![
         Span::styled(" j/k ", Style::default().fg(Color::Black).bg(Color::Gray)),
         Span::raw(" navigate    "),
-        Span::styled(" 1/2/3/Tab ", Style::default().fg(Color::Black).bg(Color::Gray)),
+        Span::styled(" 1/2/3/4/Tab ", Style::default().fg(Color::Black).bg(Color::Gray)),
         Span::raw(" switch tab    "),
         Span::styled(" q ", Style::default().fg(Color::Black).bg(Color::Gray)),
         Span::raw(" quit "),
@@ -720,6 +778,143 @@ fn build_poly(app: &App) -> Vec<Line<'static>> {
                 .fg(Color::DarkGray)
                 .add_modifier(Modifier::ITALIC),
         )));
+    }
+
+    lines
+}
+
+fn build_meta(app: &App) -> Vec<Line<'static>> {
+    let Some(s) = app.selected() else {
+        return vec![Line::from(Span::styled(
+            "(no sample selected)",
+            Style::default().fg(Color::DarkGray),
+        ))];
+    };
+    let Some(m) = app.selected_meta() else {
+        return vec![Line::from(Span::styled(
+            format!(
+                "(no meta features — run `agat analyze {}`)",
+                s.sample.id.short()
+            ),
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::ITALIC),
+        ))];
+    };
+
+    if !m.has_fingerprint() {
+        return vec![
+            kv("blocks", "0"),
+            Line::from(""),
+            Line::from(Span::styled(
+                "(no CFG fingerprint — sample is non-x86 or wasn't disassembled)",
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
+            )),
+        ];
+    }
+
+    let cluster = app.meta_cluster(s.sample.id);
+    let cluster_size = cluster.len() + 1;
+    let cluster_label = if cluster_size > 1 {
+        format!("{} members in family", cluster_size)
+    } else {
+        "singleton".to_string()
+    };
+    let cluster_color = if cluster_size > 1 {
+        Color::Red
+    } else {
+        Color::DarkGray
+    };
+
+    let mut lines = vec![
+        kv("fingerprint", m.cfg_fingerprint.clone()),
+        Line::from(vec![
+            Span::styled(
+                format!("{:<11}", "cluster"),
+                Style::default().fg(Color::DarkGray),
+            ),
+            Span::styled(
+                cluster_label,
+                Style::default().fg(cluster_color).add_modifier(Modifier::BOLD),
+            ),
+        ]),
+        kv("blocks", format!("{}", m.block_count)),
+        kv("edges", format!("{}", m.edge_count)),
+        kv(
+            "instructions",
+            format!(
+                "{} → {} (after canonicalization)",
+                m.instruction_count, m.normalized_instruction_count
+            ),
+        ),
+    ];
+
+    if cluster_size > 1 {
+        lines.push(Line::from(""));
+        lines.push(section_header(&format!(
+            "family members ({})",
+            cluster_size
+        )));
+        lines.push(Line::from(vec![
+            Span::raw("  "),
+            Span::styled(
+                format!("● {}", s.sample.id.short()),
+                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+            ),
+            Span::raw("  "),
+            Span::styled(
+                s.sample
+                    .metadata
+                    .original_filename
+                    .clone()
+                    .unwrap_or_else(|| "-".into()),
+                Style::default().fg(Color::Green),
+            ),
+            Span::styled(
+                "  (this sample)",
+                Style::default().fg(Color::DarkGray),
+            ),
+        ]));
+        for other in cluster.iter().take(8) {
+            lines.push(Line::from(vec![
+                Span::raw("  "),
+                Span::styled(
+                    format!("● {}", other.sample.id.short()),
+                    Style::default().fg(Color::Yellow),
+                ),
+                Span::raw("  "),
+                Span::raw(
+                    other
+                        .sample
+                        .metadata
+                        .original_filename
+                        .clone()
+                        .unwrap_or_else(|| "-".into()),
+                ),
+            ]));
+        }
+    }
+
+    if !m.canonical_preview.is_empty() {
+        lines.push(Line::from(""));
+        lines.push(section_header(&format!(
+            "canonical form ({} instructions)",
+            m.canonical_preview.len()
+        )));
+        for c in &m.canonical_preview {
+            lines.push(Line::from(vec![
+                Span::raw("  "),
+                Span::styled(
+                    format!("{:<8} ", c.mnemonic),
+                    Style::default()
+                        .fg(Color::Magenta)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(c.operands.clone(), Style::default().fg(Color::White)),
+            ]));
+        }
     }
 
     lines

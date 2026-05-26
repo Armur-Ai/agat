@@ -2,6 +2,7 @@
 
 use agat_core::{AnalysisContext, Analyzer, Sample, SampleId, SampleKind, SampleMetadata, Vault};
 use agat_disasm::{DisasmAnalyzer, DisasmFeatures, FlowKind};
+use agat_meta::{MetaAnalyzer, MetaFeatures};
 use agat_poly::{PolyAnalyzer, PolyFeatures, Signal};
 use agat_static::{
     entropy::EntropyCurve, strings::StringEncoding, StaticAnalyzer, StaticFeatures,
@@ -9,6 +10,7 @@ use agat_static::{
 use agat_store::{Store, StoredSample};
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -53,7 +55,12 @@ enum Cmd {
         /// Include polymorphic-engine analysis (signals, key, recovered payload).
         #[arg(long)]
         poly: bool,
+        /// Include metamorphic canonical form and CFG fingerprint.
+        #[arg(long)]
+        meta: bool,
     },
+    /// Group samples by metamorphic CFG fingerprint.
+    Cluster,
     /// Launch the interactive TUI.
     Tui,
 }
@@ -83,7 +90,13 @@ fn main() -> Result<()> {
         Cmd::Ingest { paths } => cmd_ingest(paths, &vault, &store),
         Cmd::List => cmd_list(&store),
         Cmd::Analyze { id, force } => cmd_analyze(id, force, &vault, &store),
-        Cmd::Show { id, disasm, poly } => cmd_show(id, disasm, poly, &store),
+        Cmd::Show {
+            id,
+            disasm,
+            poly,
+            meta,
+        } => cmd_show(id, disasm, poly, meta, &store),
+        Cmd::Cluster => cmd_cluster(&store),
         Cmd::Tui => agat_tui::run(vault, store).context("running tui"),
     }
 }
@@ -204,6 +217,7 @@ fn cmd_analyze(target: Option<String>, force: bool, vault: &Vault, store: &Store
         Box::new(StaticAnalyzer::default()),
         Box::new(DisasmAnalyzer::default()),
         Box::new(PolyAnalyzer),
+        Box::new(MetaAnalyzer::default()),
     ];
 
     let targets: Vec<StoredSample> = match target {
@@ -285,7 +299,7 @@ fn cmd_analyze(target: Option<String>, force: bool, vault: &Vault, store: &Store
     Ok(())
 }
 
-fn cmd_show(input: String, disasm: bool, poly: bool, store: &Store) -> Result<()> {
+fn cmd_show(input: String, disasm: bool, poly: bool, meta: bool, store: &Store) -> Result<()> {
     let id = resolve_sample_id(&input, store)?;
     let stored = store
         .get_sample(&id)?
@@ -293,6 +307,7 @@ fn cmd_show(input: String, disasm: bool, poly: bool, store: &Store) -> Result<()
     let static_rec = store.get_features(&id, "static")?;
     let disasm_rec = store.get_features(&id, "disasm")?;
     let poly_rec = store.get_features(&id, "poly")?;
+    let meta_rec = store.get_features(&id, "meta")?;
 
     println!(
         "{}  {}",
@@ -348,6 +363,86 @@ fn cmd_show(input: String, disasm: bool, poly: bool, store: &Store) -> Result<()
                     serde_json::from_value(rec.features).context("decoding poly features")?;
                 print_poly_features(&pf);
             }
+        }
+    }
+    if meta {
+        match meta_rec {
+            None => println!(
+                "\n(no meta features yet — run `agat analyze {} --force`)",
+                id.short()
+            ),
+            Some(rec) => {
+                let mf: MetaFeatures =
+                    serde_json::from_value(rec.features).context("decoding meta features")?;
+                print_meta_features(&mf, store, &id)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn cmd_cluster(store: &Store) -> Result<()> {
+    let samples = store.list_samples()?;
+    if samples.is_empty() {
+        eprintln!("no samples in store");
+        return Ok(());
+    }
+    let mut clusters: HashMap<String, Vec<StoredSample>> = HashMap::new();
+    let mut unfingerprinted: Vec<StoredSample> = Vec::new();
+    for s in samples {
+        if let Some(rec) = store.get_features(&s.sample.id, "meta")? {
+            let mf: MetaFeatures = serde_json::from_value(rec.features)
+                .context("decoding meta features")?;
+            if mf.has_fingerprint() {
+                clusters
+                    .entry(mf.cfg_fingerprint.clone())
+                    .or_default()
+                    .push(s);
+                continue;
+            }
+        }
+        unfingerprinted.push(s);
+    }
+    let mut sorted: Vec<(String, Vec<StoredSample>)> = clusters.into_iter().collect();
+    sorted.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
+
+    for (fp, members) in &sorted {
+        let label = if members.len() == 1 {
+            "singleton"
+        } else {
+            "family"
+        };
+        println!(
+            "\n{} {} ({} member{})",
+            label,
+            &fp[..fp.len().min(16)],
+            members.len(),
+            if members.len() == 1 { "" } else { "s" }
+        );
+        for s in members {
+            println!(
+                "  {}  {}",
+                s.sample.id.short(),
+                s.sample
+                    .metadata
+                    .original_filename
+                    .as_deref()
+                    .unwrap_or("-")
+            );
+        }
+    }
+    if !unfingerprinted.is_empty() {
+        println!("\nunfingerprinted ({} sample{}):", unfingerprinted.len(), if unfingerprinted.len() == 1 { "" } else { "s" });
+        for s in &unfingerprinted {
+            println!(
+                "  {}  {}",
+                s.sample.id.short(),
+                s.sample
+                    .metadata
+                    .original_filename
+                    .as_deref()
+                    .unwrap_or("-")
+            );
         }
     }
     Ok(())
@@ -604,6 +699,55 @@ fn print_poly_features(p: &PolyFeatures) {
     } else if p.detected_pattern.is_some() {
         println!("\n  (pattern detected but no high-entropy region to decrypt)");
     }
+}
+
+fn print_meta_features(m: &MetaFeatures, store: &Store, this_id: &SampleId) -> Result<()> {
+    println!("\nmetamorphic analysis");
+    if !m.has_fingerprint() {
+        println!("  (no CFG fingerprint — non-x86 or no disassembly)");
+        return Ok(());
+    }
+    println!("  fingerprint   {}", m.cfg_fingerprint);
+    println!(
+        "  blocks        {}  edges {}",
+        m.block_count, m.edge_count
+    );
+    println!(
+        "  instructions  {} → {} (after canonicalization)",
+        m.instruction_count, m.normalized_instruction_count
+    );
+
+    // Find cluster members
+    let samples = store.list_samples()?;
+    let mut members: Vec<(SampleId, Option<String>)> = Vec::new();
+    for s in &samples {
+        if s.sample.id == *this_id {
+            continue;
+        }
+        if let Some(rec) = store.get_features(&s.sample.id, "meta")? {
+            if let Ok(mf) = serde_json::from_value::<MetaFeatures>(rec.features) {
+                if mf.cfg_fingerprint == m.cfg_fingerprint {
+                    members.push((s.sample.id, s.sample.metadata.original_filename.clone()));
+                }
+            }
+        }
+    }
+    if members.is_empty() {
+        println!("  cluster       singleton");
+    } else {
+        println!("  cluster       {} other member{}", members.len(), if members.len() == 1 { "" } else { "s" });
+        for (id, name) in members.iter().take(8) {
+            println!("    {}  {}", id.short(), name.as_deref().unwrap_or("-"));
+        }
+    }
+
+    if !m.canonical_preview.is_empty() {
+        println!("\n  canonical form (first {})", m.canonical_preview.len());
+        for c in &m.canonical_preview {
+            println!("    {:<8}  {}", c.mnemonic, c.operands);
+        }
+    }
+    Ok(())
 }
 
 fn entropy_sparkline(curve: &EntropyCurve, width: usize) -> String {

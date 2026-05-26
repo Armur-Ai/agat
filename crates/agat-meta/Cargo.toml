@@ -6,7 +6,15 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 rust-version.workspace = true
-description = "Metamorphic-engine detection: normalization, clustering"
+description = "Metamorphic-engine detection via canonical-form normalization and WL hashing"
 
 [dependencies]
 agat-core.workspace = true
+agat-disasm.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+hex.workspace = true

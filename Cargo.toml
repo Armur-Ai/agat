@@ -28,6 +28,7 @@ agat-store = { path = "crates/agat-store" }
 agat-static = { path = "crates/agat-static" }
 agat-disasm = { path = "crates/agat-disasm" }
 agat-poly = { path = "crates/agat-poly" }
+agat-meta = { path = "crates/agat-meta" }
 agat-tui = { path = "crates/agat-tui" }
 
 anyhow = "1.0"
