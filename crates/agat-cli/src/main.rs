@@ -871,10 +871,24 @@ fn print_ai_features(a: &AiFeatures) {
         "no strong AI signal"
     };
     println!("  verdict          {}", verdict);
+    let ppl_score = a
+        .signal_scores
+        .perplexity
+        .map(|p| format!("{:.2}", p))
+        .unwrap_or_else(|| "  -".to_string());
     println!(
-        "  signals:  stylometry {:.2}  ·  artifact-scan {:.2}",
-        a.signal_scores.stylometry, a.signal_scores.artifact_scan
+        "  signals:  stylometry {:.2}  ·  artifact-scan {:.2}  ·  perplexity {}",
+        a.signal_scores.stylometry, a.signal_scores.artifact_scan, ppl_score
     );
+
+    if let Some(r) = &a.perplexity_result {
+        println!(
+            "  perplexity       {:.2}  ({}; {} chars corpus)",
+            r.value,
+            r.backend.label(),
+            r.corpus_chars
+        );
+    }
 
     if !a.artifacts.is_empty() {
         println!("\n  artifacts ({})", a.artifacts.len());

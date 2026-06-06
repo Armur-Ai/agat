@@ -989,6 +989,19 @@ fn build_ai(app: &App) -> Vec<Line<'static>> {
             "artifacts",
             format!("{:.2}", a.signal_scores.artifact_scan),
         ),
+        kv(
+            "perplexity",
+            match (&a.perplexity_result, a.signal_scores.perplexity) {
+                (Some(r), Some(s)) => format!(
+                    "{:.2}  (raw {:.1} via {})",
+                    s,
+                    r.value,
+                    r.backend.label()
+                ),
+                (Some(r), None) => format!("raw {:.1} via {}", r.value, r.backend.label()),
+                _ => "(corpus too small)".to_string(),
+            },
+        ),
     ];
 
     if !a.artifacts.is_empty() {

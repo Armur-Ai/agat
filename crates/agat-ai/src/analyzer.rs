@@ -2,6 +2,7 @@
 
 use crate::artifacts::{scan, ArtifactCategory, ArtifactHit};
 use crate::features::{AiFeatures, SignalScores};
+use crate::perplexity::{compute as compute_perplexity, score as score_perplexity};
 use crate::stylometry::{compute as compute_stylometry, StylometricFeatures};
 use agat_core::{AnalysisContext, Analyzer, Error, FeatureBundle, Result, Sample};
 use agat_disasm::DisasmFeatures;
@@ -36,10 +37,12 @@ impl Analyzer for AiAnalyzer {
 
         let artifacts = scan(&bytes);
         let stylometry = compute_stylometry(&sf, &df);
+        let perplexity_result = compute_perplexity(&sf.strings.samples);
+        let perplexity_score = perplexity_result.as_ref().map(|r| score_perplexity(r.value));
 
         let artifact_scan_score = score_artifacts(&artifacts);
         let stylometry_score = score_stylometry(&stylometry);
-        let combined_score = combine(artifact_scan_score, stylometry_score);
+        let combined_score = combine(artifact_scan_score, stylometry_score, perplexity_score);
 
         let features = AiFeatures {
             artifacts,
@@ -47,8 +50,9 @@ impl Analyzer for AiAnalyzer {
             signal_scores: SignalScores {
                 stylometry: stylometry_score,
                 artifact_scan: artifact_scan_score,
-                perplexity: None,
+                perplexity: perplexity_score,
             },
+            perplexity_result,
             combined_score,
         };
 
@@ -104,11 +108,17 @@ fn score_stylometry(s: &StylometricFeatures) -> f64 {
     score.min(1.0)
 }
 
-/// Combine the two per-signal scores into a final verdict in
-/// `[0, 0.95]`. We use a weighted sum then clamp; the cap is
-/// deliberate — heuristics in a constellation never deserve "100%".
-fn combine(artifact: f64, stylometry: f64) -> f64 {
-    (0.55 * artifact + 0.45 * stylometry).min(0.95)
+/// Combine per-signal scores into a final verdict in `[0, 0.95]`.
+/// When perplexity is available it gets a meaningful weight;
+/// otherwise we fall back to the artifact/stylometry mix from
+/// Phase 5. The 0.95 cap is deliberate — heuristics in a
+/// constellation never deserve "100%".
+fn combine(artifact: f64, stylometry: f64, perplexity: Option<f64>) -> f64 {
+    let raw = match perplexity {
+        Some(p) => 0.40 * artifact + 0.30 * stylometry + 0.30 * p,
+        None => 0.55 * artifact + 0.45 * stylometry,
+    };
+    raw.min(0.95)
 }
 
 fn pull_features<T: serde::de::DeserializeOwned>(

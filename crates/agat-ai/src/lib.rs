@@ -23,9 +23,11 @@
 pub mod analyzer;
 pub mod artifacts;
 pub mod features;
+pub mod perplexity;
 pub mod stylometry;
 
 pub use analyzer::AiAnalyzer;
 pub use artifacts::{ArtifactCategory, ArtifactHit};
 pub use features::{AiFeatures, SignalScores};
+pub use perplexity::{PerplexityBackend, PerplexityResult};
 pub use stylometry::StylometricFeatures;
