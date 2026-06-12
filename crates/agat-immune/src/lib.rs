@@ -21,12 +21,16 @@
 //! recognition, clonal selection, and the danger layer as sibling
 //! modules.
 
+pub mod clonal;
 pub mod detectors;
+pub mod memory;
 pub mod negative_selection;
 pub mod recognition;
 pub mod self_model;
 
+pub use clonal::{mature, ClonalConfig, Maturation};
 pub use detectors::{Detector, DetectorOrigin, Repertoire};
+pub use memory::{MemoryCell, MemoryPool};
 pub use negative_selection::{generate as generate_repertoire, NsaConfig};
 pub use recognition::{recognize, DetectorMatch, Recognition};
 pub use self_model::{SelfModel, SelfPoint};
