@@ -10,6 +10,7 @@ members = [
     "crates/agat-poly",
     "crates/agat-meta",
     "crates/agat-ai",
+    "crates/agat-antigen",
     "crates/agat-sandbox",
     "crates/agat-rewriter",
 ]
@@ -30,6 +31,7 @@ agat-disasm = { path = "crates/agat-disasm" }
 agat-poly = { path = "crates/agat-poly" }
 agat-meta = { path = "crates/agat-meta" }
 agat-ai = { path = "crates/agat-ai" }
+agat-antigen = { path = "crates/agat-antigen" }
 agat-tui = { path = "crates/agat-tui" }
 
 anyhow = "1.0"

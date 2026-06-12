@@ -1,0 +1,20 @@
+[package]
+name = "agat-antigen"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Antigen presentation: projects agat's behavioral features into a mutation-invariant signature vector with an explicit affinity metric"
+
+[dependencies]
+agat-static.workspace = true
+agat-disasm.workspace = true
+agat-poly.workspace = true
+agat-meta.workspace = true
+agat-ai.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
