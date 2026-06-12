@@ -42,6 +42,37 @@ CREATE INDEX IF NOT EXISTS idx_features_sample  ON features(sample_id);
 CREATE INDEX IF NOT EXISTS idx_artifacts_sample ON artifacts(sample_id);
 "#;
 
+/// Schema for the Artificial Immune System state: the self-model, the
+/// negative-selection detector repertoire, and clonal-selection memory
+/// cells. Kept as JSON blobs so `agat-store` stays decoupled from the
+/// immune types defined in `agat-immune`. Applied alongside `SCHEMA_V1`
+/// on every [`Store::open`]; all statements are idempotent.
+const SCHEMA_IMMUNE: &str = r#"
+CREATE TABLE IF NOT EXISTS immune_self_model (
+    name        TEXT    PRIMARY KEY,
+    model_json  TEXT    NOT NULL,
+    created_at  TEXT    NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS immune_detectors (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    repertoire    TEXT    NOT NULL,
+    family        TEXT,
+    detector_json TEXT    NOT NULL,
+    created_at    TEXT    NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS immune_memory (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    family      TEXT    NOT NULL,
+    cell_json   TEXT    NOT NULL,
+    created_at  TEXT    NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_detectors_repertoire ON immune_detectors(repertoire);
+CREATE INDEX IF NOT EXISTS idx_memory_family        ON immune_memory(family);
+"#;
+
 pub struct Store {
     conn: Connection,
 }
@@ -65,12 +96,14 @@ impl Store {
     pub fn open(path: &Path) -> Result<Self> {
         let conn = Connection::open(path).map_err(db_err)?;
         conn.execute_batch(SCHEMA_V1).map_err(db_err)?;
+        conn.execute_batch(SCHEMA_IMMUNE).map_err(db_err)?;
         Ok(Self { conn })
     }
 
     pub fn open_in_memory() -> Result<Self> {
         let conn = Connection::open_in_memory().map_err(db_err)?;
         conn.execute_batch(SCHEMA_V1).map_err(db_err)?;
+        conn.execute_batch(SCHEMA_IMMUNE).map_err(db_err)?;
         Ok(Self { conn })
     }
 
@@ -257,6 +290,37 @@ impl Store {
         }
         Ok(out)
     }
+
+    // ---- Artificial Immune System state ---------------------------
+    //
+    // The immune layer (`agat-immune`) owns the semantics of these
+    // blobs; the store just persists their JSON, keyed appropriately,
+    // so it carries no dependency on the immune types.
+
+    /// Store (or replace) a named self-model as serialized JSON.
+    pub fn put_self_model(&self, name: &str, model_json: &str) -> Result<()> {
+        let now = Utc::now().to_rfc3339();
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO immune_self_model (name, model_json, created_at) \
+                 VALUES (?1, ?2, ?3)",
+                params![name, model_json, now],
+            )
+            .map_err(db_err)?;
+        Ok(())
+    }
+
+    /// Retrieve a named self-model's JSON, if present.
+    pub fn get_self_model(&self, name: &str) -> Result<Option<String>> {
+        self.conn
+            .query_row(
+                "SELECT model_json FROM immune_self_model WHERE name = ?1",
+                params![name],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(db_err)
+    }
 }
 
 fn db_err(e: rusqlite::Error) -> Error {
@@ -332,5 +396,19 @@ mod tests {
         assert_eq!(got.analyzer, "static");
         assert_eq!(got.version, "0.1.0");
         assert_eq!(got.features["size"], 42);
+    }
+
+    #[test]
+    fn self_model_round_trip() {
+        let store = Store::open_in_memory().unwrap();
+        assert!(store.get_self_model("default").unwrap().is_none());
+        store
+            .put_self_model("default", r#"{"dim":2,"k":1,"points":[],"mean_radius":0.0}"#)
+            .unwrap();
+        let got = store.get_self_model("default").unwrap().unwrap();
+        assert!(got.contains("\"dim\":2"));
+        // Replace semantics.
+        store.put_self_model("default", r#"{"dim":3}"#).unwrap();
+        assert!(store.get_self_model("default").unwrap().unwrap().contains("\"dim\":3"));
     }
 }

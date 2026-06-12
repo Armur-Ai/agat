@@ -1,0 +1,16 @@
+[package]
+name = "agat-immune"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "agat's Artificial Immune System core: self-model, negative selection, recognition, clonal selection, and the danger layer"
+
+[dependencies]
+agat-antigen.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+rand.workspace = true
