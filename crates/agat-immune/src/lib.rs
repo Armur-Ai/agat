@@ -22,6 +22,7 @@
 //! modules.
 
 pub mod clonal;
+pub mod danger;
 pub mod detectors;
 pub mod memory;
 pub mod negative_selection;
@@ -29,6 +30,10 @@ pub mod recognition;
 pub mod self_model;
 
 pub use clonal::{mature, ClonalConfig, Maturation};
+pub use danger::{
+    assess as assess_danger, signals_from_features, DangerAssessment, DangerConfig, DangerContext,
+    DangerSignals, SignalClass,
+};
 pub use detectors::{Detector, DetectorOrigin, Repertoire};
 pub use memory::{MemoryCell, MemoryPool};
 pub use negative_selection::{generate as generate_repertoire, NsaConfig};
