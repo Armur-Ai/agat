@@ -1,5 +1,7 @@
 //! agat command-line entry point.
 
+mod immune;
+
 use agat_ai::{AiAnalyzer, AiFeatures};
 use agat_core::{AnalysisContext, Analyzer, Sample, SampleId, SampleKind, SampleMetadata, Vault};
 use agat_disasm::{DisasmAnalyzer, DisasmFeatures, FlowKind};
@@ -70,8 +72,61 @@ enum Cmd {
     /// from the rest of the family. This is the algorithm-substitution
     /// signature of LLM rewriting.
     Divergence,
+    /// Artificial Immune System: model benign "self" from a corpus.
+    #[command(name = "self")]
+    SelfNs {
+        #[command(subcommand)]
+        cmd: SelfCmd,
+    },
+    /// Artificial Immune System: the negative-selection detector repertoire.
+    Repertoire {
+        #[command(subcommand)]
+        cmd: RepertoireCmd,
+    },
+    /// Mature the repertoire onto a confirmed family variant (clonal selection).
+    Mature {
+        /// Sample id (full SHA-256 or unique prefix).
+        id: String,
+        /// Family label to attach to the matured memory cell.
+        #[arg(long)]
+        family: String,
+    },
+    /// Recognize a sample: antigen, matched detector/family, affinity, danger.
+    Recognize {
+        /// Sample id (full SHA-256 or unique prefix).
+        id: String,
+    },
     /// Launch the interactive TUI.
     Tui,
+}
+
+#[derive(Subcommand)]
+enum SelfCmd {
+    /// Build the self-model from benign samples (ids, or all tagged "benign").
+    Build {
+        ids: Vec<String>,
+        /// Neighbors used to size each self ball.
+        #[arg(long, default_value_t = 3)]
+        k: usize,
+    },
+}
+
+#[derive(Subcommand)]
+enum RepertoireCmd {
+    /// Generate the repertoire by negative selection against the self-model.
+    Generate {
+        #[arg(long)]
+        max_detectors: Option<usize>,
+        /// Self-tolerance threshold (how close to self a detector may sit).
+        #[arg(long)]
+        tolerance: Option<f64>,
+        /// Target non-self coverage in [0, 1).
+        #[arg(long)]
+        coverage: Option<f64>,
+        /// RNG seed for reproducible repertoires.
+        #[arg(long)]
+        seed: Option<u64>,
+    },
 }
 
 fn main() -> Result<()> {
@@ -108,6 +163,19 @@ fn main() -> Result<()> {
         } => cmd_show(id, disasm, poly, meta, ai, &store),
         Cmd::Cluster => cmd_cluster(&store),
         Cmd::Divergence => cmd_divergence(&store),
+        Cmd::SelfNs { cmd } => match cmd {
+            SelfCmd::Build { ids, k } => immune::cmd_self_build(ids, k, &store),
+        },
+        Cmd::Repertoire { cmd } => match cmd {
+            RepertoireCmd::Generate {
+                max_detectors,
+                tolerance,
+                coverage,
+                seed,
+            } => immune::cmd_repertoire_generate(max_detectors, tolerance, coverage, seed, &store),
+        },
+        Cmd::Mature { id, family } => immune::cmd_mature(id, family, &store),
+        Cmd::Recognize { id } => immune::cmd_recognize(id, &store),
         Cmd::Tui => agat_tui::run(vault, store).context("running tui"),
     }
 }
@@ -130,7 +198,7 @@ fn read_password() -> Result<String> {
     rpassword::prompt_password("Vault password: ").context("reading vault password")
 }
 
-fn resolve_sample_id(input: &str, store: &Store) -> Result<SampleId> {
+pub(crate) fn resolve_sample_id(input: &str, store: &Store) -> Result<SampleId> {
     if input.len() == 64 {
         return SampleId::from_hex(input).map_err(|e| anyhow::anyhow!("{e}"));
     }
