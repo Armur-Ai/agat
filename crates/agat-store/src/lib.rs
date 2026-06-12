@@ -54,23 +54,17 @@ CREATE TABLE IF NOT EXISTS immune_self_model (
     created_at  TEXT    NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS immune_detectors (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    repertoire    TEXT    NOT NULL,
-    family        TEXT,
-    detector_json TEXT    NOT NULL,
-    created_at    TEXT    NOT NULL
+CREATE TABLE IF NOT EXISTS immune_repertoire (
+    name            TEXT    PRIMARY KEY,
+    repertoire_json TEXT    NOT NULL,
+    created_at      TEXT    NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS immune_memory (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    family      TEXT    NOT NULL,
-    cell_json   TEXT    NOT NULL,
+    name        TEXT    PRIMARY KEY,
+    memory_json TEXT    NOT NULL,
     created_at  TEXT    NOT NULL
 );
-
-CREATE INDEX IF NOT EXISTS idx_detectors_repertoire ON immune_detectors(repertoire);
-CREATE INDEX IF NOT EXISTS idx_memory_family        ON immune_memory(family);
 "#;
 
 pub struct Store {
@@ -294,30 +288,52 @@ impl Store {
     // ---- Artificial Immune System state ---------------------------
     //
     // The immune layer (`agat-immune`) owns the semantics of these
-    // blobs; the store just persists their JSON, keyed appropriately,
-    // so it carries no dependency on the immune types.
+    // blobs; the store just persists their JSON, keyed by name, so it
+    // carries no dependency on the immune types. Table and column names
+    // below are internal constants, never user input.
 
     /// Store (or replace) a named self-model as serialized JSON.
-    pub fn put_self_model(&self, name: &str, model_json: &str) -> Result<()> {
+    pub fn put_self_model(&self, name: &str, json: &str) -> Result<()> {
+        self.put_blob("immune_self_model", "model_json", name, json)
+    }
+    /// Retrieve a named self-model's JSON, if present.
+    pub fn get_self_model(&self, name: &str) -> Result<Option<String>> {
+        self.get_blob("immune_self_model", "model_json", name)
+    }
+
+    /// Store (or replace) a named detector repertoire as serialized JSON.
+    pub fn put_repertoire(&self, name: &str, json: &str) -> Result<()> {
+        self.put_blob("immune_repertoire", "repertoire_json", name, json)
+    }
+    /// Retrieve a named detector repertoire's JSON, if present.
+    pub fn get_repertoire(&self, name: &str) -> Result<Option<String>> {
+        self.get_blob("immune_repertoire", "repertoire_json", name)
+    }
+
+    /// Store (or replace) a named memory-cell pool as serialized JSON.
+    pub fn put_memory(&self, name: &str, json: &str) -> Result<()> {
+        self.put_blob("immune_memory", "memory_json", name, json)
+    }
+    /// Retrieve a named memory-cell pool's JSON, if present.
+    pub fn get_memory(&self, name: &str) -> Result<Option<String>> {
+        self.get_blob("immune_memory", "memory_json", name)
+    }
+
+    fn put_blob(&self, table: &str, col: &str, name: &str, json: &str) -> Result<()> {
         let now = Utc::now().to_rfc3339();
+        let sql = format!(
+            "INSERT OR REPLACE INTO {table} (name, {col}, created_at) VALUES (?1, ?2, ?3)"
+        );
         self.conn
-            .execute(
-                "INSERT OR REPLACE INTO immune_self_model (name, model_json, created_at) \
-                 VALUES (?1, ?2, ?3)",
-                params![name, model_json, now],
-            )
+            .execute(&sql, params![name, json, now])
             .map_err(db_err)?;
         Ok(())
     }
 
-    /// Retrieve a named self-model's JSON, if present.
-    pub fn get_self_model(&self, name: &str) -> Result<Option<String>> {
+    fn get_blob(&self, table: &str, col: &str, name: &str) -> Result<Option<String>> {
+        let sql = format!("SELECT {col} FROM {table} WHERE name = ?1");
         self.conn
-            .query_row(
-                "SELECT model_json FROM immune_self_model WHERE name = ?1",
-                params![name],
-                |row| row.get::<_, String>(0),
-            )
+            .query_row(&sql, params![name], |row| row.get::<_, String>(0))
             .optional()
             .map_err(db_err)
     }
@@ -410,5 +426,17 @@ mod tests {
         // Replace semantics.
         store.put_self_model("default", r#"{"dim":3}"#).unwrap();
         assert!(store.get_self_model("default").unwrap().unwrap().contains("\"dim\":3"));
+    }
+
+    #[test]
+    fn repertoire_and_memory_round_trip() {
+        let store = Store::open_in_memory().unwrap();
+        assert!(store.get_repertoire("default").unwrap().is_none());
+        store.put_repertoire("default", r#"{"dim":4,"detectors":[]}"#).unwrap();
+        assert!(store.get_repertoire("default").unwrap().unwrap().contains("\"dim\":4"));
+
+        assert!(store.get_memory("default").unwrap().is_none());
+        store.put_memory("default", r#"{"cells":[]}"#).unwrap();
+        assert!(store.get_memory("default").unwrap().unwrap().contains("cells"));
     }
 }
