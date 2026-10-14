@@ -175,14 +175,18 @@ pub fn cmd_mature(input: String, family: String, store: &Store) -> Result<()> {
 /// `agat recognize <id> [--json]` — present the sample's antigen to the
 /// immune system (recognition + danger) via the engine, and render the
 /// resulting [`ScanResult`].
-pub fn cmd_recognize(input: String, format: OutputFormat, store: &Store) -> Result<()> {
+///
+/// Returns the verdict's process exit code so a pipeline can branch on
+/// the outcome without parsing output: `0` clean, `2` needs a human,
+/// `3` non-self + dangerous. (`1` stays reserved for a tool error.)
+pub fn cmd_recognize(input: String, format: OutputFormat, store: &Store) -> Result<i32> {
     let id = crate::resolve_sample_id(&input, store)?;
     let result = scan_sample(store, &id, None)?;
     match format {
         OutputFormat::Json => println!("{}", serde_json::to_string_pretty(&result)?),
         OutputFormat::Text => print_report(&result),
     }
-    Ok(())
+    Ok(result.severity().exit_code())
 }
 
 /// Render a [`ScanResult`] as the human-readable, two-axis report.

@@ -197,7 +197,12 @@ fn main() -> Result<()> {
             } else {
                 immune::OutputFormat::Text
             };
-            immune::cmd_recognize(id, format, &store)
+            let code = immune::cmd_recognize(id, format, &store)?;
+            // The verdict severity is the command's real result, surfaced
+            // as the process exit code. Drop the store first so sqlite
+            // flushes cleanly before we exit.
+            drop(store);
+            std::process::exit(code);
         }
         Cmd::Tui => agat_tui::run(vault.expect("tui needs a vault"), store).context("running tui"),
     }
