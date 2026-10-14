@@ -45,3 +45,6 @@ venv/
 dist/
 build/
 *.tar.gz
+
+# Local agent / editor config
+.claude/
