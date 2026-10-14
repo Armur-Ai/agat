@@ -18,13 +18,15 @@ use agat_immune::{generate_repertoire, mature, NsaConfig, SelfModel};
 use agat_store::Store;
 use anyhow::{bail, Result};
 
-/// Output format for the `recognize` command.
+/// Output format for the `recognize` and `scan` commands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputFormat {
     /// Human-readable, multi-axis report (the default).
     Text,
-    /// A single `ScanResult` JSON object.
+    /// `ScanResult` JSON (a single object, or an array for a batch).
     Json,
+    /// SARIF 2.1.0 log — one finding per non-clean sample.
+    Sarif,
 }
 
 // ---- commands ------------------------------------------------------
@@ -184,6 +186,12 @@ pub fn cmd_recognize(input: String, format: OutputFormat, store: &Store) -> Resu
     let result = scan_sample(store, &id, None)?;
     match format {
         OutputFormat::Json => println!("{}", serde_json::to_string_pretty(&result)?),
+        OutputFormat::Sarif => println!(
+            "{}",
+            serde_json::to_string_pretty(&agat_engine::sarif::to_sarif(std::slice::from_ref(
+                &result
+            )))?
+        ),
         OutputFormat::Text => print_report(&result),
     }
     Ok(result.severity().exit_code())

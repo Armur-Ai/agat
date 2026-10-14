@@ -99,14 +99,18 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
-    /// Scan a file end to end: ingest, analyze, and recognize in one shot.
-    /// Requires a trained model (`self build` + `repertoire generate`).
+    /// Scan a file or directory end to end: ingest, analyze, and recognize
+    /// in one shot. Requires a trained model (`self build` +
+    /// `repertoire generate`).
     Scan {
-        /// Path to the file to scan.
-        file: PathBuf,
-        /// Emit the full ScanResult as JSON instead of the human report.
-        #[arg(long)]
+        /// Path to a file, or a directory to scan recursively.
+        path: PathBuf,
+        /// Emit ScanResult JSON (an object for one file, an array for a batch).
+        #[arg(long, conflicts_with = "sarif")]
         json: bool,
+        /// Emit a SARIF 2.1.0 log (one finding per non-clean sample).
+        #[arg(long)]
+        sarif: bool,
     },
     /// Launch the interactive TUI.
     Tui,
@@ -213,14 +217,16 @@ fn main() -> Result<()> {
             drop(store);
             std::process::exit(code);
         }
-        Cmd::Scan { file, json } => {
-            let format = if json {
+        Cmd::Scan { path, json, sarif } => {
+            let format = if sarif {
+                immune::OutputFormat::Sarif
+            } else if json {
                 immune::OutputFormat::Json
             } else {
                 immune::OutputFormat::Text
             };
             let code = cmd_scan(
-                &file,
+                &path,
                 format,
                 vault.as_ref().expect("scan needs a vault"),
                 &store,
@@ -301,35 +307,98 @@ fn ingest_one(path: &std::path::Path, vault: &Vault, store: &Store) -> Result<(S
     Ok((id, true))
 }
 
-/// `agat scan <file>` — the operator front door: ingest, analyze, and
-/// recognize a file in one shot, then render the ScanResult. Returns the
-/// verdict severity exit code. Requires a trained model to be present.
+/// Recursively collect regular files under `path` (or `[path]` if it is
+/// itself a file), sorted for deterministic output.
+fn collect_files(path: &std::path::Path) -> Result<Vec<PathBuf>> {
+    let mut out = Vec::new();
+    if path.is_file() {
+        out.push(path.to_path_buf());
+        return Ok(out);
+    }
+    if !path.is_dir() {
+        anyhow::bail!("{} is not a file or directory", path.display());
+    }
+    let mut stack = vec![path.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir)
+            .with_context(|| format!("reading directory {}", dir.display()))?
+        {
+            let entry = entry?;
+            let p = entry.path();
+            if p.is_dir() {
+                stack.push(p);
+            } else if p.is_file() {
+                out.push(p);
+            }
+        }
+    }
+    out.sort();
+    Ok(out)
+}
+
+/// `agat scan <file|dir>` — the operator front door: ingest, analyze, and
+/// recognize one file or every file under a directory, then render the
+/// results. Returns the worst verdict severity's exit code over the
+/// batch. Requires a trained model to be present.
 fn cmd_scan(
-    file: &std::path::Path,
+    path: &std::path::Path,
     format: immune::OutputFormat,
     vault: &Vault,
     store: &Store,
 ) -> Result<i32> {
-    let (id, newly) = ingest_one(file, vault, store)?;
-    let stored = store
-        .get_sample(&id)?
-        .ok_or_else(|| anyhow::anyhow!("sample {} missing from store after ingest", id.short()))?;
-    // Analyze (idempotent — skips analyzers already at the current version).
-    run_analyzers(&stored, false, vault, store, true)?;
-    eprintln!(
-        "scanned {} ({}{} bytes){}",
-        file.display(),
-        if newly { "" } else { "cached, " },
-        stored.sample.size,
-        if newly { "" } else { " — already ingested" }
-    );
-
-    let result = agat_engine::scan_sample(store, &id, file.to_str().map(String::from))?;
-    match format {
-        immune::OutputFormat::Json => println!("{}", serde_json::to_string_pretty(&result)?),
-        immune::OutputFormat::Text => immune::print_report(&result),
+    let files = collect_files(path)?;
+    if files.is_empty() {
+        anyhow::bail!("no files to scan at {}", path.display());
     }
-    Ok(result.severity().exit_code())
+    let single = files.len() == 1;
+
+    let mut results = Vec::with_capacity(files.len());
+    for file in &files {
+        let (id, _newly) = ingest_one(file, vault, store)?;
+        let stored = store.get_sample(&id)?.ok_or_else(|| {
+            anyhow::anyhow!("sample {} missing from store after ingest", id.short())
+        })?;
+        // Analyze (idempotent — skips analyzers already at the current version).
+        run_analyzers(&stored, false, vault, store, true)?;
+        results.push(agat_engine::scan_sample(
+            store,
+            &id,
+            file.to_str().map(String::from),
+        )?);
+    }
+    eprintln!("scanned {} file(s) under {}", results.len(), path.display());
+
+    match format {
+        immune::OutputFormat::Sarif => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&agat_engine::sarif::to_sarif(&results))?
+            );
+        }
+        immune::OutputFormat::Json => {
+            if single {
+                println!("{}", serde_json::to_string_pretty(&results[0])?);
+            } else {
+                println!("{}", serde_json::to_string_pretty(&results)?);
+            }
+        }
+        immune::OutputFormat::Text => {
+            for (i, r) in results.iter().enumerate() {
+                if i > 0 {
+                    println!("\n{}", "─".repeat(60));
+                }
+                immune::print_report(r);
+            }
+        }
+    }
+
+    // Worst severity across the batch drives the exit code.
+    let code = results
+        .iter()
+        .map(|r| r.severity().exit_code())
+        .max()
+        .unwrap_or(0);
+    Ok(code)
 }
 
 fn cmd_ingest(paths: Vec<PathBuf>, vault: &Vault, store: &Store) -> Result<()> {
