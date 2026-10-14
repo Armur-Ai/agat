@@ -149,14 +149,27 @@ fn main() -> Result<()> {
     let vault_path = agat_home.join("vault");
     let store_path = agat_home.join("store.db");
 
-    let password = read_password()?;
-    let vault = Vault::open_or_create(&vault_path, &password).context("opening vault")?;
+    // The encrypted vault holds raw sample bytes; only commands that read
+    // or write those bytes need it. Recognition, listing, and the immune
+    // commands all operate on the extracted features in the store, so they
+    // run without a password — which is what makes `agat scan`/`recognize`
+    // usable non-interactively in a pipeline.
+    let needs_vault = matches!(
+        cli.command,
+        Cmd::Ingest { .. } | Cmd::Analyze { .. } | Cmd::Tui
+    );
+    let vault = if needs_vault {
+        let password = read_password()?;
+        Some(Vault::open_or_create(&vault_path, &password).context("opening vault")?)
+    } else {
+        None
+    };
     let store = Store::open(&store_path).context("opening store")?;
 
     match cli.command {
-        Cmd::Ingest { paths } => cmd_ingest(paths, &vault, &store),
+        Cmd::Ingest { paths } => cmd_ingest(paths, vault.as_ref().expect("ingest needs a vault"), &store),
         Cmd::List => cmd_list(&store),
-        Cmd::Analyze { id, force } => cmd_analyze(id, force, &vault, &store),
+        Cmd::Analyze { id, force } => cmd_analyze(id, force, vault.as_ref().expect("analyze needs a vault"), &store),
         Cmd::Show {
             id,
             disasm,
@@ -186,7 +199,7 @@ fn main() -> Result<()> {
             };
             immune::cmd_recognize(id, format, &store)
         }
-        Cmd::Tui => agat_tui::run(vault, store).context("running tui"),
+        Cmd::Tui => agat_tui::run(vault.expect("tui needs a vault"), store).context("running tui"),
     }
 }
 
