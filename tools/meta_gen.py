@@ -10,8 +10,18 @@ Variant B (v2): pointer in rdi, counter in edx, no padding
 Variant C (v3): pointer in rsi, counter in ecx, NOPs inserted in
                 the prelude (loop body unchanged)
 
+Beyond the three named variants, `--count N` synthesizes additional
+metamorphic siblings (v4, v5, ...) by combining a register pair with a
+deterministic NOP-padding pattern sprinkled through the *prelude only* —
+the loop body keeps its byte offsets, so the short jump's displacement
+stays correct. Every variant shares one plaintext family and must
+canonicalize to the same CFG fingerprint. A larger family is what lets
+the immune layer be trained on several variants and tested on a held-out
+one — the generalization benchmark in `bench/`.
+
 Usage:
-    python3 tools/meta_gen.py [prefix]    # writes prefix_v1.bin, _v2.bin, _v3.bin
+    python3 tools/meta_gen.py [prefix]              # v1, v2, v3
+    python3 tools/meta_gen.py [prefix] --count 8    # v1..v8
 """
 import argparse
 import itertools
@@ -89,6 +99,43 @@ def variant_c_decryptor(payload_vaddr: int, payload_len: int, key: int) -> bytes
     )
 
 
+# Register pairs: (ptr mov opcode, xor-ptr opcode, inc-ptr opcode,
+# ctr mov opcode, dec-ctr opcode). The loop body (xor/inc/dec/jne) is
+# always exactly 10 bytes so the `jne -10` displacement is register- and
+# padding-invariant.
+_REG_PAIRS = [
+    # rsi / ecx
+    (b"\x48\xbe", b"\x80\x36", b"\x48\xff\xc6", b"\xb9", b"\xff\xc9"),
+    # rdi / edx
+    (b"\x48\xbf", b"\x80\x37", b"\x48\xff\xc7", b"\xba", b"\xff\xca"),
+]
+
+
+def synth_decryptor(
+    payload_vaddr: int, payload_len: int, key: int, pair_idx: int, nop_pattern
+) -> bytes:
+    """Build a metamorphic decryptor from a register pair plus a NOP
+    pattern `(a, b, c)` giving NOP counts at three prelude positions:
+    before the pointer mov, between the two movs, and after the counter
+    mov. NOPs live only in the prelude, so the loop body's offsets — and
+    the `jne -10` displacement — are untouched."""
+    ptr_mov, xor_ptr, inc_ptr, ctr_mov, dec_ctr = _REG_PAIRS[pair_idx]
+    a, b, c = nop_pattern
+    nop = b"\x90"
+    return (
+        nop * a
+        + ptr_mov + struct.pack("<Q", payload_vaddr)   # mov <ptr>, imm64
+        + nop * b
+        + ctr_mov + struct.pack("<I", payload_len)      # mov <ctr>, imm32
+        + nop * c
+        + xor_ptr + bytes([key & 0xFF])                 # xor BYTE PTR [ptr], imm8
+        + inc_ptr                                        # inc <ptr>
+        + dec_ctr                                        # dec <ctr>
+        + b"\x75\xf6"                                     # jne short -10
+        + b"\xf4"                                          # hlt
+    )
+
+
 def build_elf(decryptor: bytes, ciphertext: bytes) -> bytes:
     EHDR_SIZE = 64
     PHDR_SIZE = 56
@@ -158,17 +205,47 @@ def main() -> int:
     ap.add_argument("prefix", nargs="?", default="/tmp/meta_demo")
     ap.add_argument("--payload-size", type=int, default=512)
     ap.add_argument("--seed", type=int, default=2026)
+    ap.add_argument(
+        "--count",
+        type=int,
+        default=3,
+        help="number of metamorphic variants to emit (>=1; v1..v3 are fixed, extras are synthesized)",
+    )
     args = ap.parse_args()
+
+    if args.count < 1:
+        print("--count must be >= 1", file=sys.stderr)
+        return 2
 
     plaintext = build_plaintext(args.payload_size, args.seed)
     ciphertext = bytes(b ^ KEY for b in plaintext)
     payload_vaddr = 0x401000
+    clen = len(ciphertext)
 
-    variants = [
-        ("v1", variant_a_decryptor(payload_vaddr, len(ciphertext), KEY)),
-        ("v2", variant_b_decryptor(payload_vaddr, len(ciphertext), KEY)),
-        ("v3", variant_c_decryptor(payload_vaddr, len(ciphertext), KEY)),
+    # The three named variants, byte-for-byte as before.
+    named = [
+        variant_a_decryptor(payload_vaddr, clen, KEY),
+        variant_b_decryptor(payload_vaddr, clen, KEY),
+        variant_c_decryptor(payload_vaddr, clen, KEY),
     ]
+
+    variants = []
+    rng = random.Random(args.seed ^ 0x5E70)
+    seen = set()
+    for i in range(args.count):
+        if i < len(named):
+            decryptor = named[i]
+        else:
+            # Synthesize a distinct metamorphic sibling: a register pair
+            # plus a prelude NOP pattern not emitted before.
+            while True:
+                pair_idx = rng.randrange(len(_REG_PAIRS))
+                pattern = (rng.randrange(0, 4), rng.randrange(0, 4), rng.randrange(0, 4))
+                decryptor = synth_decryptor(payload_vaddr, clen, KEY, pair_idx, pattern)
+                if decryptor not in seen:
+                    break
+        seen.add(decryptor)
+        variants.append((f"v{i + 1}", decryptor))
 
     for label, decryptor in variants:
         elf = build_elf(decryptor, ciphertext)
@@ -179,7 +256,10 @@ def main() -> int:
             f"wrote {len(elf):>6d} bytes to {path}  "
             f"(decryptor {len(decryptor)} bytes)"
         )
-    print(f"\nkey 0x{KEY:02x}; all three variants should canonicalize identically")
+    print(
+        f"\nkey 0x{KEY:02x}; all {len(variants)} variant(s) share one plaintext "
+        f"family and should canonicalize identically"
+    )
     return 0
 
 
