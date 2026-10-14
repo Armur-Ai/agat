@@ -228,3 +228,115 @@ pub fn assemble(
         verdict,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use agat_antigen::Antigen;
+    use agat_immune::danger::{DangerSignals, SignalContribution};
+    use agat_immune::detectors::DetectorOrigin;
+    use agat_immune::recognition::DetectorMatch;
+    use std::collections::BTreeSet;
+
+    fn antigen() -> Antigen {
+        let mut blocks = BTreeSet::new();
+        blocks.insert("blk-a".to_string());
+        blocks.insert("blk-b".to_string());
+        Antigen {
+            signature: vec![0.1, 0.2, 0.3, 0.4],
+            block_tokens: blocks,
+            cfg_fingerprint: Some("cfg123".to_string()),
+            plaintext_fingerprint: None,
+        }
+    }
+
+    fn danger(score: f64, context: DangerContext) -> DangerAssessment {
+        DangerAssessment {
+            signals: DangerSignals {
+                pamp: 0.8,
+                danger: 0.5,
+                safe: 0.1,
+                contributors: vec![
+                    SignalContribution { name: "mild".into(), class: SignalClass::Safe, value: 0.2 },
+                    SignalContribution { name: "loud".into(), class: SignalClass::Pamp, value: 0.9 },
+                    SignalContribution { name: "mid".into(), class: SignalClass::Danger, value: 0.5 },
+                ],
+            },
+            csm: 0.0,
+            semi: 0.0,
+            mat: 0.0,
+            danger_score: score,
+            context,
+        }
+    }
+
+    fn recognition_nonself_family() -> Recognition {
+        Recognition {
+            recognized: true,
+            bound_count: 3,
+            best: Some(DetectorMatch {
+                affinity: 0.77,
+                family: Some("emotet".into()),
+                generation: 2,
+                origin: DetectorOrigin::Memory,
+                detector_index: 5,
+            }),
+            family: Some("emotet".into()),
+            from_memory: true,
+            self_surface_distance: Some(0.42),
+        }
+    }
+
+    #[test]
+    fn maps_fields_sorts_signals_and_roundtrips_json() {
+        let id = SampleId([3u8; 32]);
+        let danger = danger(0.81, DangerContext::Dangerous);
+        let result = assemble(&id, Some("x.exe".into()), &antigen(), &recognition_nonself_family(), &danger, 4);
+
+        // sample
+        assert_eq!(result.sample.short, id.short());
+        assert_eq!(result.sample.name.as_deref(), Some("x.exe"));
+        // antigen
+        assert_eq!(result.antigen.dim, 4);
+        assert_eq!(result.antigen.blocks, 2);
+        assert_eq!(result.antigen.cfg_fingerprint.as_deref(), Some("cfg123"));
+        assert!(result.antigen.plaintext_fingerprint.is_none());
+        // recognition
+        assert!(result.recognition.recognized);
+        assert_eq!(result.recognition.family.as_deref(), Some("emotet"));
+        assert!((result.recognition.affinity - 0.77).abs() < 1e-9);
+        assert_eq!(result.recognition.bound_detectors, 3);
+        assert!(result.recognition.secondary_response);
+        assert_eq!(result.recognition.known_families, 4);
+        // danger: signals sorted strongest-first
+        assert_eq!(result.danger.context, "dangerous");
+        assert_eq!(result.danger.signals.first().unwrap().name, "loud");
+        assert!(result.danger.signals.windows(2).all(|w| w[0].value >= w[1].value));
+        // fused verdict: non-self + dangerous ⇒ malicious
+        assert_eq!(result.severity(), agat_core::Severity::Malicious);
+        // schema + contract
+        assert_eq!(result.schema_version, agat_core::SCAN_SCHEMA_VERSION);
+        // JSON round-trips without loss of the severity decision
+        let json = serde_json::to_string(&result).unwrap();
+        let back: agat_core::ScanResult = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.severity(), agat_core::Severity::Malicious);
+        assert_eq!(back.recognition.family.as_deref(), Some("emotet"));
+    }
+
+    #[test]
+    fn within_self_and_calm_is_clean() {
+        let id = SampleId([1u8; 32]);
+        let rec = Recognition {
+            recognized: false,
+            bound_count: 0,
+            best: None,
+            family: None,
+            from_memory: false,
+            self_surface_distance: Some(-0.3),
+        };
+        let result = assemble(&id, None, &antigen(), &rec, &danger(0.05, DangerContext::Safe), 2);
+        assert_eq!(result.severity(), agat_core::Severity::Clean);
+        assert_eq!(result.recognition.affinity, 0.0);
+        assert!(result.sample.name.is_none());
+    }
+}
