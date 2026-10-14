@@ -1,0 +1,24 @@
+[package]
+name = "agat-engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "The agat scan facade: assembles a ScanResult from the immune core"
+
+[dependencies]
+agat-core.workspace = true
+agat-store.workspace = true
+agat-static.workspace = true
+agat-poly.workspace = true
+agat-ai.workspace = true
+agat-antigen.workspace = true
+agat-immune.workspace = true
+
+anyhow.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true

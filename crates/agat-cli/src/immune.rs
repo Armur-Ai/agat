@@ -2,72 +2,29 @@
 //! the detector repertoire by negative selection, mature it via clonal
 //! selection, and recognize unknown samples (recognition + danger).
 //!
-//! All antigens are built with the default [`AntigenConfig`] so the
-//! self-model, repertoire, memory, and queried samples share one metric
-//! space and dimensionality.
+//! The loading/persistence helpers and the recognition+danger pipeline
+//! now live in `agat-engine`; this module is the command surface over
+//! them. `recognize` delegates to [`agat_engine::scan_sample`] and
+//! renders the returned [`ScanResult`] — the engine is the single source
+//! of the verdict, so the CLI, JSON output, and any future API agree.
 
-use agat_ai::AiFeatures;
-use agat_antigen::{Antigen, AntigenConfig};
-use agat_core::SampleId;
-use agat_immune::danger::{assess, signals_from_features, DangerAssessment, SignalClass};
-use agat_immune::{
-    generate_repertoire, mature, recognize, DangerConfig, MemoryPool, NsaConfig, Recognition,
-    Repertoire, SelfModel,
+use agat_antigen::Antigen;
+use agat_core::{ScanResult, Severity};
+use agat_engine::{
+    antigen_from_map, feature_map, load_memory, load_repertoire, load_self_model, scan_sample,
+    SLOT,
 };
-use agat_poly::PolyFeatures;
-use agat_static::StaticFeatures;
+use agat_immune::{generate_repertoire, mature, NsaConfig, SelfModel};
 use agat_store::Store;
-use anyhow::{bail, Context, Result};
-use serde::de::DeserializeOwned;
-use std::collections::HashMap;
+use anyhow::{bail, Result};
 
-/// Single named slot for each persisted immune structure.
-const SLOT: &str = "default";
-
-fn antigen_config() -> AntigenConfig {
-    AntigenConfig::default()
-}
-
-// ---- loading / persistence helpers --------------------------------
-
-fn feature_map(store: &Store, id: &SampleId) -> Result<HashMap<String, serde_json::Value>> {
-    let mut map = HashMap::new();
-    for name in ["static", "disasm", "poly", "meta", "ai"] {
-        if let Some(rec) = store.get_features(id, name)? {
-            map.insert(name.to_string(), rec.features);
-        }
-    }
-    Ok(map)
-}
-
-fn typed<T: DeserializeOwned>(map: &HashMap<String, serde_json::Value>, name: &str) -> Option<T> {
-    map.get(name)
-        .and_then(|v| serde_json::from_value(v.clone()).ok())
-}
-
-fn antigen_from_map(map: &HashMap<String, serde_json::Value>) -> Antigen {
-    Antigen::from_feature_map(map, &antigen_config())
-}
-
-fn load_self_model(store: &Store) -> Result<Option<SelfModel>> {
-    match store.get_self_model(SLOT)? {
-        Some(j) => Ok(Some(serde_json::from_str(&j).context("decoding self-model")?)),
-        None => Ok(None),
-    }
-}
-
-fn load_repertoire(store: &Store) -> Result<Option<Repertoire>> {
-    match store.get_repertoire(SLOT)? {
-        Some(j) => Ok(Some(serde_json::from_str(&j).context("decoding repertoire")?)),
-        None => Ok(None),
-    }
-}
-
-fn load_memory(store: &Store) -> Result<MemoryPool> {
-    match store.get_memory(SLOT)? {
-        Some(j) => Ok(serde_json::from_str(&j).context("decoding memory pool")?),
-        None => Ok(MemoryPool::default()),
-    }
+/// Output format for the `recognize` command.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutputFormat {
+    /// Human-readable, multi-axis report (the default).
+    Text,
+    /// A single `ScanResult` JSON object.
+    Json,
 }
 
 // ---- commands ------------------------------------------------------
@@ -76,8 +33,8 @@ fn load_memory(store: &Store) -> Result<MemoryPool> {
 /// signature space. With no ids, every sample tagged/family "benign" is
 /// used.
 pub fn cmd_self_build(inputs: Vec<String>, k: usize, store: &Store) -> Result<()> {
-    let ids: Vec<SampleId> = if inputs.is_empty() {
-        let benign: Vec<SampleId> = store
+    let ids: Vec<agat_core::SampleId> = if inputs.is_empty() {
+        let benign: Vec<agat_core::SampleId> = store
             .list_samples()?
             .into_iter()
             .filter(|s| {
@@ -142,8 +99,8 @@ pub fn cmd_repertoire_generate(
     seed: Option<u64>,
     store: &Store,
 ) -> Result<()> {
-    let self_model = load_self_model(store)?
-        .context("no self-model yet — run `agat self build` first")?;
+    let self_model =
+        load_self_model(store)?.ok_or_else(|| anyhow::anyhow!("no self-model yet — run `agat self build` first"))?;
 
     let mut cfg = NsaConfig::default();
     if let Some(m) = max_detectors {
@@ -215,83 +172,52 @@ pub fn cmd_mature(input: String, family: String, store: &Store) -> Result<()> {
     Ok(())
 }
 
-/// `agat recognize <id>` — present the sample's antigen to the immune
-/// system: recognition (non-self / family / affinity) and danger.
-pub fn cmd_recognize(input: String, store: &Store) -> Result<()> {
+/// `agat recognize <id> [--json]` — present the sample's antigen to the
+/// immune system (recognition + danger) via the engine, and render the
+/// resulting [`ScanResult`].
+pub fn cmd_recognize(input: String, format: OutputFormat, store: &Store) -> Result<()> {
     let id = crate::resolve_sample_id(&input, store)?;
-    let map = feature_map(store, &id)?;
-    if map.is_empty() {
-        bail!("sample {} has no analyzer features — run `agat analyze` first", id.short());
+    let result = scan_sample(store, &id, None)?;
+    match format {
+        OutputFormat::Json => println!("{}", serde_json::to_string_pretty(&result)?),
+        OutputFormat::Text => print_report(&result),
     }
-    let antigen = antigen_from_map(&map);
-
-    let repertoire = load_repertoire(store)?
-        .context("no repertoire yet — run `agat self build` then `agat repertoire generate`")?;
-    let memory = load_memory(store)?;
-    let self_model = load_self_model(store)?;
-
-    // Merge the innate (negative-selection) repertoire with the learned
-    // memory cells for a single recognition pass.
-    let mut detectors = repertoire.detectors.clone();
-    detectors.extend(memory.detectors());
-    let combined = Repertoire { dim: repertoire.dim, detectors };
-
-    let recognition = recognize(&antigen, &combined, self_model.as_ref());
-
-    // Danger layer over the same sample's real harm signals.
-    let static_features: Option<StaticFeatures> = typed(&map, "static");
-    let poly: Option<PolyFeatures> = typed(&map, "poly");
-    let ai: Option<AiFeatures> = typed(&map, "ai");
-    let signals = signals_from_features(
-        static_features.as_ref(),
-        poly.as_ref(),
-        ai.as_ref(),
-        recognition.self_surface_distance,
-    );
-    let danger = assess(&signals, &DangerConfig::default());
-
-    print_report(&id, &antigen, &recognition, &danger, memory.families().len());
     Ok(())
 }
 
-fn print_report(
-    id: &SampleId,
-    antigen: &Antigen,
-    rec: &Recognition,
-    danger: &DangerAssessment,
-    known_families: usize,
-) {
-    println!("immune assessment — {}", id.short());
+/// Render a [`ScanResult`] as the human-readable, two-axis report.
+pub fn print_report(r: &ScanResult) {
+    println!("immune assessment — {}", r.sample.short);
 
     // --- antigen ---------------------------------------------------
     println!("\nantigen");
     println!(
         "  signature dim {} · {} canonical block{}",
-        antigen.dim(),
-        antigen.block_tokens.len(),
-        if antigen.block_tokens.len() == 1 { "" } else { "s" }
+        r.antigen.dim,
+        r.antigen.blocks,
+        if r.antigen.blocks == 1 { "" } else { "s" }
     );
     println!(
         "  cfg fingerprint   {}",
-        antigen.cfg_fingerprint.as_deref().unwrap_or("-")
+        r.antigen.cfg_fingerprint.as_deref().unwrap_or("-")
     );
     println!(
         "  plaintext finger  {}",
-        antigen.plaintext_fingerprint.as_deref().unwrap_or("-")
+        r.antigen.plaintext_fingerprint.as_deref().unwrap_or("-")
     );
 
     // --- recognition axis ------------------------------------------
-    println!("\nrecognition  ({known_families} known famil{})", if known_families == 1 { "y" } else { "ies" });
-    println!("  verdict      {}", rec.verdict());
-    println!("  family       {}", rec.family.as_deref().unwrap_or("-"));
-    let aff = rec.best.as_ref().map(|b| b.affinity).unwrap_or(0.0);
-    println!("  affinity     {:.3}", aff);
-    println!("  bound detectors {}", rec.bound_count);
+    let fam = r.recognition.known_families;
+    println!("\nrecognition  ({fam} known famil{})", if fam == 1 { "y" } else { "ies" });
+    println!("  verdict      {}", r.recognition.verdict);
+    println!("  family       {}", r.recognition.family.as_deref().unwrap_or("-"));
+    println!("  affinity     {:.3}", r.recognition.affinity);
+    println!("  bound detectors {}", r.recognition.bound_detectors);
     println!(
         "  secondary response {}",
-        if rec.from_memory { "yes (memory cell)" } else { "no" }
+        if r.recognition.secondary_response { "yes (memory cell)" } else { "no" }
     );
-    if let Some(d) = rec.self_surface_distance {
+    if let Some(d) = r.recognition.self_surface_distance {
         println!("  distance from self  {:+.3}", d);
     }
 
@@ -299,40 +225,27 @@ fn print_report(
     println!("\ndanger  (DCA-style signal fusion)");
     println!(
         "  score {:.3}  ·  context {}  ·  P {:.2} / D {:.2} / S {:.2}",
-        danger.danger_score,
-        danger.context.label(),
-        danger.signals.pamp,
-        danger.signals.danger,
-        danger.signals.safe
+        r.danger.score, r.danger.context, r.danger.pamp, r.danger.danger, r.danger.safe
     );
-    if !danger.signals.contributors.is_empty() {
-        let mut cs = danger.signals.contributors.clone();
-        cs.sort_by(|a, b| b.value.partial_cmp(&a.value).unwrap_or(std::cmp::Ordering::Equal));
+    if !r.danger.signals.is_empty() {
         println!("  signals:");
-        for c in cs.iter().take(6) {
-            let class = match c.class {
-                SignalClass::Pamp => "PAMP  ",
-                SignalClass::Danger => "danger",
-                SignalClass::Safe => "safe  ",
+        for c in r.danger.signals.iter().take(6) {
+            let class = match c.class.as_str() {
+                "pamp" => "PAMP  ",
+                "danger" => "danger",
+                _ => "safe  ",
             };
             println!("    [{}] {:<32} {:.2}", class, c.name, c.value);
         }
     }
 
-    // --- fused priority (two axes, not collapsed) ------------------
+    // --- fused verdict (two axes, not collapsed) -------------------
     println!("\npriority");
-    let line = match (rec.recognized, danger.context) {
-        (true, agat_immune::DangerContext::Dangerous) => {
-            "NON-SELF + DANGEROUS — investigate (recognition and danger agree)"
-        }
-        (true, agat_immune::DangerContext::Ambiguous) => {
-            "non-self with ambiguous danger — worth a look"
-        }
-        (true, _) => "non-self but low danger — likely benign-but-unusual (false-positive guard)",
-        (false, agat_immune::DangerContext::Dangerous) => {
-            "within self yet dangerous signals present — anomaly worth review"
-        }
-        (false, _) => "within self / unrecognized — no action",
+    let tag = match r.verdict.severity {
+        Severity::Malicious => "MALICIOUS",
+        Severity::Suspicious => "suspicious",
+        Severity::Review => "review",
+        Severity::Clean => "clean",
     };
-    println!("  {line}");
+    println!("  [{tag}] {}", r.verdict.summary);
 }

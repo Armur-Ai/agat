@@ -22,6 +22,7 @@ agat-meta.workspace = true
 agat-ai.workspace = true
 agat-antigen.workspace = true
 agat-immune.workspace = true
+agat-engine.workspace = true
 agat-tui.workspace = true
 anyhow.workspace = true
 tracing.workspace = true

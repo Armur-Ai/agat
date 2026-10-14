@@ -95,6 +95,9 @@ enum Cmd {
     Recognize {
         /// Sample id (full SHA-256 or unique prefix).
         id: String,
+        /// Emit the full ScanResult as JSON instead of the human report.
+        #[arg(long)]
+        json: bool,
     },
     /// Launch the interactive TUI.
     Tui,
@@ -175,7 +178,14 @@ fn main() -> Result<()> {
             } => immune::cmd_repertoire_generate(max_detectors, tolerance, coverage, seed, &store),
         },
         Cmd::Mature { id, family } => immune::cmd_mature(id, family, &store),
-        Cmd::Recognize { id } => immune::cmd_recognize(id, &store),
+        Cmd::Recognize { id, json } => {
+            let format = if json {
+                immune::OutputFormat::Json
+            } else {
+                immune::OutputFormat::Text
+            };
+            immune::cmd_recognize(id, format, &store)
+        }
         Cmd::Tui => agat_tui::run(vault, store).context("running tui"),
     }
 }
