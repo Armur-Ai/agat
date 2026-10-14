@@ -99,6 +99,15 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
+    /// Scan a file end to end: ingest, analyze, and recognize in one shot.
+    /// Requires a trained model (`self build` + `repertoire generate`).
+    Scan {
+        /// Path to the file to scan.
+        file: PathBuf,
+        /// Emit the full ScanResult as JSON instead of the human report.
+        #[arg(long)]
+        json: bool,
+    },
     /// Launch the interactive TUI.
     Tui,
 }
@@ -156,7 +165,7 @@ fn main() -> Result<()> {
     // usable non-interactively in a pipeline.
     let needs_vault = matches!(
         cli.command,
-        Cmd::Ingest { .. } | Cmd::Analyze { .. } | Cmd::Tui
+        Cmd::Ingest { .. } | Cmd::Analyze { .. } | Cmd::Scan { .. } | Cmd::Tui
     );
     let vault = if needs_vault {
         let password = read_password()?;
@@ -201,6 +210,21 @@ fn main() -> Result<()> {
             // The verdict severity is the command's real result, surfaced
             // as the process exit code. Drop the store first so sqlite
             // flushes cleanly before we exit.
+            drop(store);
+            std::process::exit(code);
+        }
+        Cmd::Scan { file, json } => {
+            let format = if json {
+                immune::OutputFormat::Json
+            } else {
+                immune::OutputFormat::Text
+            };
+            let code = cmd_scan(
+                &file,
+                format,
+                vault.as_ref().expect("scan needs a vault"),
+                &store,
+            )?;
             drop(store);
             std::process::exit(code);
         }
@@ -251,42 +275,84 @@ pub(crate) fn resolve_sample_id(input: &str, store: &Store) -> Result<SampleId> 
     }
 }
 
+/// Ingest one file into the vault + store. Returns the sample id and
+/// whether it was newly added (false ⇒ it was already in the vault).
+/// Idempotent: a sample already present is left untouched.
+fn ingest_one(path: &std::path::Path, vault: &Vault, store: &Store) -> Result<(SampleId, bool)> {
+    let bytes = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
+    let id = SampleId::from_bytes(&bytes);
+    if vault.has(&id) {
+        tracing::info!(sample = %id.short(), "already in vault");
+        return Ok((id, false));
+    }
+    let kind = SampleKind::detect(&bytes);
+    let original_filename = path.file_name().and_then(|s| s.to_str()).map(String::from);
+    let sample = Sample {
+        id,
+        kind,
+        size: bytes.len() as u64,
+        metadata: SampleMetadata {
+            original_filename,
+            ..Default::default()
+        },
+    };
+    vault.store(&id, &bytes)?;
+    store.insert_sample(&sample)?;
+    Ok((id, true))
+}
+
+/// `agat scan <file>` — the operator front door: ingest, analyze, and
+/// recognize a file in one shot, then render the ScanResult. Returns the
+/// verdict severity exit code. Requires a trained model to be present.
+fn cmd_scan(
+    file: &std::path::Path,
+    format: immune::OutputFormat,
+    vault: &Vault,
+    store: &Store,
+) -> Result<i32> {
+    let (id, newly) = ingest_one(file, vault, store)?;
+    let stored = store
+        .get_sample(&id)?
+        .ok_or_else(|| anyhow::anyhow!("sample {} missing from store after ingest", id.short()))?;
+    // Analyze (idempotent — skips analyzers already at the current version).
+    run_analyzers(&stored, false, vault, store, true)?;
+    eprintln!(
+        "scanned {} ({}{} bytes){}",
+        file.display(),
+        if newly { "" } else { "cached, " },
+        stored.sample.size,
+        if newly { "" } else { " — already ingested" }
+    );
+
+    let result = agat_engine::scan_sample(store, &id, file.to_str().map(String::from))?;
+    match format {
+        immune::OutputFormat::Json => println!("{}", serde_json::to_string_pretty(&result)?),
+        immune::OutputFormat::Text => immune::print_report(&result),
+    }
+    Ok(result.severity().exit_code())
+}
+
 fn cmd_ingest(paths: Vec<PathBuf>, vault: &Vault, store: &Store) -> Result<()> {
     let mut ingested = 0;
     let mut skipped = 0;
     for path in &paths {
-        let bytes = std::fs::read(path)
-            .with_context(|| format!("reading {}", path.display()))?;
-        let id = SampleId::from_bytes(&bytes);
-        let kind = SampleKind::detect(&bytes);
-        if vault.has(&id) {
-            tracing::info!(sample = %id.short(), "already in vault, skipping");
+        let (id, newly) = ingest_one(path, vault, store)?;
+        if newly {
+            let stored = store.get_sample(&id)?;
+            let (size, kind) = stored
+                .map(|s| (s.sample.size, s.sample.kind))
+                .unwrap_or((0, SampleKind::Unknown));
+            println!(
+                "ingested  {}  {:>10}B  {:<10}  {}",
+                id.short(),
+                size,
+                kind,
+                path.display()
+            );
+            ingested += 1;
+        } else {
             skipped += 1;
-            continue;
         }
-        let original_filename = path
-            .file_name()
-            .and_then(|s| s.to_str())
-            .map(String::from);
-        let sample = Sample {
-            id,
-            kind,
-            size: bytes.len() as u64,
-            metadata: SampleMetadata {
-                original_filename,
-                ..Default::default()
-            },
-        };
-        vault.store(&id, &bytes)?;
-        store.insert_sample(&sample)?;
-        println!(
-            "ingested  {}  {:>10}B  {:<10}  {}",
-            id.short(),
-            bytes.len(),
-            kind,
-            path.display()
-        );
-        ingested += 1;
     }
     eprintln!("\n{ingested} ingested, {skipped} skipped");
     Ok(())
@@ -319,15 +385,84 @@ fn cmd_list(store: &Store) -> Result<()> {
     Ok(())
 }
 
-fn cmd_analyze(target: Option<String>, force: bool, vault: &Vault, store: &Store) -> Result<()> {
-    let analyzers: Vec<Box<dyn Analyzer>> = vec![
+/// The ordered analysis pipeline. Downstream analyzers read upstream
+/// features from the context rather than re-parsing.
+fn analyzers() -> Vec<Box<dyn Analyzer>> {
+    vec![
         Box::new(StaticAnalyzer::default()),
         Box::new(DisasmAnalyzer::default()),
         Box::new(PolyAnalyzer),
         Box::new(MetaAnalyzer::default()),
         Box::new(AiAnalyzer),
-    ];
+    ]
+}
 
+/// Run the full analyzer pipeline over one stored sample, persisting each
+/// bundle. Returns `(analyzed, skipped)` analyzer counts. `quiet`
+/// suppresses the per-analyzer progress lines (used by `scan`).
+fn run_analyzers(
+    stored: &StoredSample,
+    force: bool,
+    vault: &Vault,
+    store: &Store,
+    quiet: bool,
+) -> Result<(u64, u64)> {
+    let id = &stored.sample.id;
+    let mut analyzed = 0u64;
+    let mut skipped = 0u64;
+    // Fresh context per sample; downstream analyzers read upstream
+    // features from `ctx.previous_features` rather than re-parsing.
+    let mut ctx = AnalysisContext::new(vault);
+
+    for analyzer in &analyzers() {
+        if !force {
+            if let Some(existing) = store.get_features(id, analyzer.name())? {
+                if existing.version == analyzer.version() {
+                    ctx.previous_features
+                        .insert(analyzer.name().to_string(), existing.features);
+                    tracing::debug!(
+                        sample = %id.short(),
+                        analyzer = analyzer.name(),
+                        "already at current version"
+                    );
+                    skipped += 1;
+                    continue;
+                }
+            }
+        }
+        // Make sure declared dependencies are present in the context.
+        for dep in analyzer.dependencies() {
+            if !ctx.previous_features.contains_key(*dep) {
+                if let Some(rec) = store.get_features(id, dep)? {
+                    ctx.previous_features.insert((*dep).to_string(), rec.features);
+                } else {
+                    tracing::warn!(
+                        "analyzer {} requires upstream '{}' which has no features yet",
+                        analyzer.name(),
+                        dep
+                    );
+                }
+            }
+        }
+
+        let bundle = analyzer.analyze(&stored.sample, &ctx)?;
+        ctx.previous_features
+            .insert(analyzer.name().to_string(), bundle.features.clone());
+        store.insert_features(id, &bundle)?;
+        if !quiet {
+            println!(
+                "analyzed  {}  {} v{}",
+                id.short(),
+                analyzer.name(),
+                analyzer.version()
+            );
+        }
+        analyzed += 1;
+    }
+    Ok((analyzed, skipped))
+}
+
+fn cmd_analyze(target: Option<String>, force: bool, vault: &Vault, store: &Store) -> Result<()> {
     let targets: Vec<StoredSample> = match target {
         Some(input) => {
             let id = resolve_sample_id(&input, store)?;
@@ -347,54 +482,9 @@ fn cmd_analyze(target: Option<String>, force: bool, vault: &Vault, store: &Store
     let mut total_analyzed = 0u64;
     let mut total_skipped = 0u64;
     for stored in &targets {
-        let id = &stored.sample.id;
-        // Fresh context per sample; downstream analyzers read upstream
-        // features from `ctx.previous_features` rather than re-parsing.
-        let mut ctx = AnalysisContext::new(vault);
-
-        for analyzer in &analyzers {
-            if !force {
-                if let Some(existing) = store.get_features(id, analyzer.name())? {
-                    if existing.version == analyzer.version() {
-                        ctx.previous_features
-                            .insert(analyzer.name().to_string(), existing.features);
-                        tracing::debug!(
-                            sample = %id.short(),
-                            analyzer = analyzer.name(),
-                            "already at current version"
-                        );
-                        total_skipped += 1;
-                        continue;
-                    }
-                }
-            }
-            // Make sure declared dependencies are present in the context.
-            for dep in analyzer.dependencies() {
-                if !ctx.previous_features.contains_key(*dep) {
-                    if let Some(rec) = store.get_features(id, dep)? {
-                        ctx.previous_features.insert((*dep).to_string(), rec.features);
-                    } else {
-                        tracing::warn!(
-                            "analyzer {} requires upstream '{}' which has no features yet",
-                            analyzer.name(),
-                            dep
-                        );
-                    }
-                }
-            }
-
-            let bundle = analyzer.analyze(&stored.sample, &ctx)?;
-            ctx.previous_features
-                .insert(analyzer.name().to_string(), bundle.features.clone());
-            store.insert_features(id, &bundle)?;
-            println!(
-                "analyzed  {}  {} v{}",
-                id.short(),
-                analyzer.name(),
-                analyzer.version()
-            );
-            total_analyzed += 1;
-        }
+        let (a, s) = run_analyzers(stored, force, vault, store, false)?;
+        total_analyzed += a;
+        total_skipped += s;
     }
     eprintln!(
         "\n{total_analyzed} analyses run, {total_skipped} skipped{}",
