@@ -41,7 +41,7 @@ impl Analyzer for DisasmAnalyzer {
     }
 
     fn analyze(&self, sample: &Sample, ctx: &AnalysisContext) -> Result<FeatureBundle> {
-        let bytes = ctx.vault.load(&sample.id)?;
+        let bytes = ctx.load(&sample.id)?;
         let parsed = parse(&bytes);
 
         let bitness = match parsed.arch {

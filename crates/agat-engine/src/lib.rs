@@ -22,18 +22,21 @@ pub mod sarif;
 
 use std::collections::HashMap;
 
-use agat_ai::AiFeatures;
+use agat_ai::{AiAnalyzer, AiFeatures};
+use agat_disasm::DisasmAnalyzer;
+use agat_meta::MetaAnalyzer;
 use agat_antigen::{Antigen, AntigenConfig};
 use agat_core::{
-    AntigenSummary, DangerSummary, RecognitionSummary, SampleId, SampleRef, ScanResult,
-    SignalSummary, SCAN_SCHEMA_VERSION,
+    AnalysisContext, Analyzer, AntigenSummary, DangerSummary, RecognitionSummary, Sample,
+    SampleId, SampleKind, SampleMetadata, SampleRef, ScanResult, SignalSummary,
+    SCAN_SCHEMA_VERSION,
 };
 use agat_immune::danger::{assess, signals_from_features, DangerAssessment, SignalClass};
 use agat_immune::{
     DangerConfig, DangerContext, MemoryPool, Recognition, Repertoire, SelfModel,
 };
-use agat_poly::PolyFeatures;
-use agat_static::StaticFeatures;
+use agat_poly::{PolyAnalyzer, PolyFeatures};
+use agat_static::{StaticAnalyzer, StaticFeatures};
 use agat_store::Store;
 use anyhow::{Context, Result};
 use serde::de::DeserializeOwned;
@@ -74,6 +77,46 @@ pub fn antigen_from_map(map: &HashMap<String, serde_json::Value>) -> Antigen {
     Antigen::from_feature_map(map, &antigen_config())
 }
 
+/// The ordered analysis pipeline. Downstream analyzers read upstream
+/// features from the context rather than re-parsing.
+pub fn analyzers() -> Vec<Box<dyn Analyzer>> {
+    vec![
+        Box::new(StaticAnalyzer::default()),
+        Box::new(DisasmAnalyzer::default()),
+        Box::new(PolyAnalyzer),
+        Box::new(MetaAnalyzer::default()),
+        Box::new(AiAnalyzer),
+    ]
+}
+
+/// Run the full analyzer pipeline over raw bytes held in memory, with no
+/// vault and no store writes. Returns the sample descriptor and its
+/// feature map (the same shape [`feature_map`] reads back from a store).
+pub fn analyze_bytes(
+    bytes: &[u8],
+    original_filename: Option<String>,
+) -> Result<(Sample, HashMap<String, serde_json::Value>)> {
+    let id = SampleId::from_bytes(bytes);
+    let sample = Sample {
+        id,
+        kind: SampleKind::detect(bytes),
+        size: bytes.len() as u64,
+        metadata: SampleMetadata {
+            original_filename,
+            ..Default::default()
+        },
+    };
+    let mut ctx = AnalysisContext::in_memory(bytes);
+    for analyzer in &analyzers() {
+        let bundle = analyzer
+            .analyze(&sample, &ctx)
+            .with_context(|| format!("running {} analyzer", analyzer.name()))?;
+        ctx.previous_features
+            .insert(analyzer.name().to_string(), bundle.features);
+    }
+    Ok((sample, ctx.previous_features))
+}
+
 /// Load the persisted self-model, if one has been built.
 pub fn load_self_model(store: &Store) -> Result<Option<SelfModel>> {
     match store.get_self_model(SLOT)? {
@@ -109,54 +152,88 @@ pub enum ScanError {
     NoRepertoire,
 }
 
-/// Scan one already-analyzed sample: present its antigen to the immune
-/// system (recognition + danger) and assemble the fused [`ScanResult`].
+/// The persisted immune state needed to scan: the negative-selection
+/// repertoire merged with learned memory cells, plus the self-model.
+/// Load it once and reuse it across a batch.
+pub struct ImmuneModel {
+    combined: Repertoire,
+    self_model: Option<SelfModel>,
+    known_families: usize,
+}
+
+impl ImmuneModel {
+    /// Load the active model from the store. Fails with
+    /// [`ScanError::NoRepertoire`] if agat has not been trained yet.
+    pub fn load(store: &Store) -> Result<Self> {
+        let repertoire = load_repertoire(store)?.ok_or(ScanError::NoRepertoire)?;
+        let memory = load_memory(store)?;
+        let self_model = load_self_model(store)?;
+
+        // Merge the innate (negative-selection) repertoire with the learned
+        // memory cells for a single recognition pass.
+        let mut detectors = repertoire.detectors;
+        detectors.extend(memory.detectors());
+        Ok(Self {
+            combined: Repertoire { dim: repertoire.dim, detectors },
+            self_model,
+            known_families: memory.families().len(),
+        })
+    }
+
+    /// Present a sample's feature map to the immune system (recognition +
+    /// danger) and assemble the fused [`ScanResult`].
+    pub fn scan(
+        &self,
+        id: &SampleId,
+        name: Option<String>,
+        map: &HashMap<String, serde_json::Value>,
+    ) -> Result<ScanResult> {
+        if map.is_empty() {
+            return Err(ScanError::NoFeatures(id.short()).into());
+        }
+        let antigen = antigen_from_map(map);
+        let recognition = agat_immune::recognize(&antigen, &self.combined, self.self_model.as_ref());
+
+        // Danger layer over the same sample's real harm signals.
+        let static_features: Option<StaticFeatures> = typed(map, "static");
+        let poly: Option<PolyFeatures> = typed(map, "poly");
+        let ai: Option<AiFeatures> = typed(map, "ai");
+        let signals = signals_from_features(
+            static_features.as_ref(),
+            poly.as_ref(),
+            ai.as_ref(),
+            recognition.self_surface_distance,
+        );
+        let danger = assess(&signals, &DangerConfig::default());
+
+        Ok(assemble(id, name, &antigen, &recognition, &danger, self.known_families))
+    }
+
+    /// Stateless one-shot scan: analyze `bytes` in memory and recognize
+    /// them. Nothing is written to the vault or the store.
+    pub fn scan_bytes(&self, bytes: &[u8], name: Option<String>) -> Result<ScanResult> {
+        let original = name
+            .as_deref()
+            .and_then(|n| std::path::Path::new(n).file_name())
+            .and_then(|s| s.to_str())
+            .map(String::from);
+        let (sample, map) = analyze_bytes(bytes, original)?;
+        self.scan(&sample.id, name, &map)
+    }
+}
+
+/// Scan one already-analyzed sample from the store: present its antigen
+/// to the immune system (recognition + danger) and assemble the fused
+/// [`ScanResult`].
 ///
 /// `name` is an optional original file name/path to echo back in the
 /// result; it does not affect the verdict.
-///
-/// This is the exact pipeline the CLI's `recognize` command used, lifted
-/// verbatim so behavior is unchanged — only the output is now a typed,
-/// serializable object instead of printed text.
 pub fn scan_sample(store: &Store, id: &SampleId, name: Option<String>) -> Result<ScanResult> {
     let map = feature_map(store, id)?;
     if map.is_empty() {
         return Err(ScanError::NoFeatures(id.short()).into());
     }
-    let antigen = antigen_from_map(&map);
-
-    let repertoire = load_repertoire(store)?.ok_or(ScanError::NoRepertoire)?;
-    let memory = load_memory(store)?;
-    let self_model = load_self_model(store)?;
-
-    // Merge the innate (negative-selection) repertoire with the learned
-    // memory cells for a single recognition pass.
-    let mut detectors = repertoire.detectors.clone();
-    detectors.extend(memory.detectors());
-    let combined = Repertoire { dim: repertoire.dim, detectors };
-
-    let recognition = agat_immune::recognize(&antigen, &combined, self_model.as_ref());
-
-    // Danger layer over the same sample's real harm signals.
-    let static_features: Option<StaticFeatures> = typed(&map, "static");
-    let poly: Option<PolyFeatures> = typed(&map, "poly");
-    let ai: Option<AiFeatures> = typed(&map, "ai");
-    let signals = signals_from_features(
-        static_features.as_ref(),
-        poly.as_ref(),
-        ai.as_ref(),
-        recognition.self_surface_distance,
-    );
-    let danger = assess(&signals, &DangerConfig::default());
-
-    Ok(assemble(
-        id,
-        name,
-        &antigen,
-        &recognition,
-        &danger,
-        memory.families().len(),
-    ))
+    ImmuneModel::load(store)?.scan(id, name, &map)
 }
 
 /// Assemble a [`ScanResult`] from the internal immune outputs. Kept
@@ -323,6 +400,18 @@ mod tests {
         let back: agat_core::ScanResult = serde_json::from_str(&json).unwrap();
         assert_eq!(back.severity(), agat_core::Severity::Malicious);
         assert_eq!(back.recognition.family.as_deref(), Some("emotet"));
+    }
+
+    #[test]
+    fn analyze_bytes_runs_every_analyzer_in_memory() {
+        let bytes = b"\x7fELF not really an elf, just some bytes to analyze".to_vec();
+        let (sample, map) = analyze_bytes(&bytes, Some("x.bin".into())).unwrap();
+        assert_eq!(sample.id, SampleId::from_bytes(&bytes));
+        assert_eq!(sample.size, bytes.len() as u64);
+        assert_eq!(sample.metadata.original_filename.as_deref(), Some("x.bin"));
+        for name in ["static", "disasm", "poly", "meta", "ai"] {
+            assert!(map.contains_key(name), "missing {name} features");
+        }
     }
 
     #[test]

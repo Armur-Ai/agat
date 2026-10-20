@@ -2,14 +2,12 @@
 
 mod immune;
 
-use agat_ai::{AiAnalyzer, AiFeatures};
-use agat_core::{AnalysisContext, Analyzer, Sample, SampleId, SampleKind, SampleMetadata, Vault};
-use agat_disasm::{DisasmAnalyzer, DisasmFeatures, FlowKind};
-use agat_meta::{MetaAnalyzer, MetaFeatures};
-use agat_poly::{PolyAnalyzer, PolyFeatures, Signal};
-use agat_static::{
-    entropy::EntropyCurve, strings::StringEncoding, StaticAnalyzer, StaticFeatures,
-};
+use agat_ai::AiFeatures;
+use agat_core::{AnalysisContext, Sample, SampleId, SampleKind, SampleMetadata, Vault};
+use agat_disasm::{DisasmFeatures, FlowKind};
+use agat_meta::MetaFeatures;
+use agat_poly::{PolyFeatures, Signal};
+use agat_static::{entropy::EntropyCurve, strings::StringEncoding, StaticFeatures};
 use agat_store::{Store, StoredSample};
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
@@ -99,12 +97,18 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
-    /// Scan a file or directory end to end: ingest, analyze, and recognize
-    /// in one shot. Requires a trained model (`self build` +
-    /// `repertoire generate`).
+    /// Scan files or directories end to end: analyze and recognize in one
+    /// shot. Stateless by default — files are analyzed in memory and
+    /// nothing is written, so no vault password is needed. Requires a
+    /// trained model (`self build` + `repertoire generate`).
     Scan {
-        /// Path to a file, or a directory to scan recursively.
-        path: PathBuf,
+        /// Files, or directories to scan recursively.
+        #[arg(required = true)]
+        paths: Vec<PathBuf>,
+        /// Also ingest each file into the encrypted vault sample library
+        /// (and persist its features), as `agat ingest` + `analyze` would.
+        #[arg(long)]
+        ingest: bool,
         /// Emit ScanResult JSON (an object for one file, an array for a batch).
         #[arg(long, conflicts_with = "sarif")]
         json: bool,
@@ -169,7 +173,7 @@ fn main() -> Result<()> {
     // usable non-interactively in a pipeline.
     let needs_vault = matches!(
         cli.command,
-        Cmd::Ingest { .. } | Cmd::Analyze { .. } | Cmd::Scan { .. } | Cmd::Tui
+        Cmd::Ingest { .. } | Cmd::Analyze { .. } | Cmd::Scan { ingest: true, .. } | Cmd::Tui
     );
     let vault = if needs_vault {
         let password = read_password()?;
@@ -217,7 +221,12 @@ fn main() -> Result<()> {
             drop(store);
             std::process::exit(code);
         }
-        Cmd::Scan { path, json, sarif } => {
+        Cmd::Scan {
+            paths,
+            ingest: _,
+            json,
+            sarif,
+        } => {
             let format = if sarif {
                 immune::OutputFormat::Sarif
             } else if json {
@@ -225,12 +234,7 @@ fn main() -> Result<()> {
             } else {
                 immune::OutputFormat::Text
             };
-            let code = cmd_scan(
-                &path,
-                format,
-                vault.as_ref().expect("scan needs a vault"),
-                &store,
-            )?;
+            let code = cmd_scan(&paths, format, vault.as_ref(), &store)?;
             drop(store);
             std::process::exit(code);
         }
@@ -336,37 +340,55 @@ fn collect_files(path: &std::path::Path) -> Result<Vec<PathBuf>> {
     Ok(out)
 }
 
-/// `agat scan <file|dir>` — the operator front door: ingest, analyze, and
-/// recognize one file or every file under a directory, then render the
+/// `agat scan <path...>` — the operator front door: analyze and recognize
+/// every file given (directories are walked recursively), then render the
 /// results. Returns the worst verdict severity's exit code over the
 /// batch. Requires a trained model to be present.
+///
+/// With `vault` = `None` the scan is stateless: each file is analyzed in
+/// memory and nothing is written. With a vault (`--ingest`), each file is
+/// also added to the sample library and its features persisted.
 fn cmd_scan(
-    path: &std::path::Path,
+    paths: &[PathBuf],
     format: immune::OutputFormat,
-    vault: &Vault,
+    vault: Option<&Vault>,
     store: &Store,
 ) -> Result<i32> {
-    let files = collect_files(path)?;
+    let mut files = Vec::new();
+    for p in paths {
+        files.extend(collect_files(p)?);
+    }
+    files.sort();
+    files.dedup();
     if files.is_empty() {
-        anyhow::bail!("no files to scan at {}", path.display());
+        anyhow::bail!("no files to scan");
     }
     let single = files.len() == 1;
 
+    // Load the trained model once for the whole batch.
+    let model = agat_engine::ImmuneModel::load(store)?;
     let mut results = Vec::with_capacity(files.len());
     for file in &files {
-        let (id, _newly) = ingest_one(file, vault, store)?;
-        let stored = store.get_sample(&id)?.ok_or_else(|| {
-            anyhow::anyhow!("sample {} missing from store after ingest", id.short())
-        })?;
-        // Analyze (idempotent — skips analyzers already at the current version).
-        run_analyzers(&stored, false, vault, store, true)?;
-        results.push(agat_engine::scan_sample(
-            store,
-            &id,
-            file.to_str().map(String::from),
-        )?);
+        let name = file.to_str().map(String::from);
+        let result = match vault {
+            Some(vault) => {
+                let (id, _newly) = ingest_one(file, vault, store)?;
+                let stored = store.get_sample(&id)?.ok_or_else(|| {
+                    anyhow::anyhow!("sample {} missing from store after ingest", id.short())
+                })?;
+                // Analyze (idempotent — skips analyzers already at the current version).
+                run_analyzers(&stored, false, vault, store, true)?;
+                model.scan(&id, name, &agat_engine::feature_map(store, &id)?)?
+            }
+            None => {
+                let bytes =
+                    std::fs::read(file).with_context(|| format!("reading {}", file.display()))?;
+                model.scan_bytes(&bytes, name)?
+            }
+        };
+        results.push(result);
     }
-    eprintln!("scanned {} file(s) under {}", results.len(), path.display());
+    eprintln!("scanned {} file(s)", results.len());
 
     match format {
         immune::OutputFormat::Sarif => {
@@ -454,18 +476,6 @@ fn cmd_list(store: &Store) -> Result<()> {
     Ok(())
 }
 
-/// The ordered analysis pipeline. Downstream analyzers read upstream
-/// features from the context rather than re-parsing.
-fn analyzers() -> Vec<Box<dyn Analyzer>> {
-    vec![
-        Box::new(StaticAnalyzer::default()),
-        Box::new(DisasmAnalyzer::default()),
-        Box::new(PolyAnalyzer),
-        Box::new(MetaAnalyzer::default()),
-        Box::new(AiAnalyzer),
-    ]
-}
-
 /// Run the full analyzer pipeline over one stored sample, persisting each
 /// bundle. Returns `(analyzed, skipped)` analyzer counts. `quiet`
 /// suppresses the per-analyzer progress lines (used by `scan`).
@@ -483,7 +493,7 @@ fn run_analyzers(
     // features from `ctx.previous_features` rather than re-parsing.
     let mut ctx = AnalysisContext::new(vault);
 
-    for analyzer in &analyzers() {
+    for analyzer in &agat_engine::analyzers() {
         if !force {
             if let Some(existing) = store.get_features(id, analyzer.name())? {
                 if existing.version == analyzer.version() {

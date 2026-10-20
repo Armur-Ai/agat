@@ -34,7 +34,7 @@ impl Analyzer for StaticAnalyzer {
     }
 
     fn analyze(&self, sample: &Sample, ctx: &AnalysisContext) -> Result<FeatureBundle> {
-        let bytes = ctx.vault.load(&sample.id)?;
+        let bytes = ctx.load(&sample.id)?;
 
         let parsed = parse::parse(&bytes);
         let hashes = hashes::compute_hashes(&bytes, &parsed);

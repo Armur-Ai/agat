@@ -32,7 +32,7 @@ impl Analyzer for PolyAnalyzer {
     fn analyze(&self, sample: &Sample, ctx: &AnalysisContext) -> Result<FeatureBundle> {
         let sf: StaticFeatures = pull_features(ctx, "static")?;
         let df: DisasmFeatures = pull_features(ctx, "disasm")?;
-        let bytes = ctx.vault.load(&sample.id)?;
+        let bytes = ctx.load(&sample.id)?;
 
         let signals = collect_signals(&sf, &df);
         let confidence = confidence(&signals);
