@@ -48,3 +48,6 @@ build/
 
 # Local agent / editor config
 .claude/
+
+# Benchmark corpora (real binaries; regenerate with bench/fetch-benign.sh)
+bench/corpus/
