@@ -189,6 +189,7 @@ impl ScanPolicy {
 /// repertoire merged with learned memory cells, plus the self-model.
 /// Load it once and reuse it across a batch.
 pub struct ImmuneModel {
+    antigen_cfg: AntigenConfig,
     combined: Repertoire,
     self_model: Option<SelfModel>,
     known_families: usize,
@@ -202,17 +203,34 @@ impl ImmuneModel {
         let repertoire = load_repertoire(store)?.ok_or(ScanError::NoRepertoire)?;
         let memory = load_memory(store)?;
         let self_model = load_self_model(store)?;
+        Ok(Self::from_parts(repertoire, &memory, self_model))
+    }
 
+    /// Assemble a model from in-memory immune state (e.g. one trained
+    /// on the fly by a benchmark), with the default antigen config.
+    pub fn from_parts(
+        repertoire: Repertoire,
+        memory: &MemoryPool,
+        self_model: Option<SelfModel>,
+    ) -> Self {
         // Merge the innate (negative-selection) repertoire with the learned
         // memory cells for a single recognition pass.
         let mut detectors = repertoire.detectors;
         detectors.extend(memory.detectors());
-        Ok(Self {
+        Self {
+            antigen_cfg: antigen_config(),
             combined: Repertoire { dim: repertoire.dim, detectors },
             self_model,
             known_families: memory.families().len(),
             policy: ScanPolicy::default(),
-        })
+        }
+    }
+
+    /// Present antigens built with `cfg`. It must be the config the
+    /// model's self-model, repertoire, and memory were trained with.
+    pub fn with_antigen_config(mut self, cfg: AntigenConfig) -> Self {
+        self.antigen_cfg = cfg;
+        self
     }
 
     /// Scan under `policy` instead of the defaults.
@@ -232,7 +250,7 @@ impl ImmuneModel {
         if map.is_empty() {
             return Err(ScanError::NoFeatures(id.short()).into());
         }
-        let antigen = antigen_from_map(map);
+        let antigen = Antigen::from_feature_map(map, &self.antigen_cfg);
         let recognition = agat_immune::recognize(&antigen, &self.combined, self.self_model.as_ref());
 
         // Danger layer over the same sample's real harm signals.

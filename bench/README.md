@@ -7,7 +7,8 @@ with `python3` and the agat workspace.
 |---|---|
 | `run.sh` | corpus-level **detection rate** on held-out variants and **false-positive rate** on held-out real benign binaries (CI-gateable) |
 | `generalize.sh` | the single headline moment: one never-seen variant recognized as its family |
-| `fetch-benign.sh` | builds the real benign corpus `run.sh` measures FPs on |
+| `sweep.sh` | the affinity weights aren't a hand-tuned knife edge: detection/FP under 32 perturbed weightings |
+| `fetch-benign.sh` | builds the real benign corpus `run.sh` and `sweep.sh` measure FPs on |
 
 ## `run.sh` — detection and false-positive rates
 
@@ -80,6 +81,39 @@ detection is gated.
   that; the script takes any directory.
 - The family is still synthetic. This measures the metamorphic axis on a
   controlled family, not detection of real-world malware.
+
+## `sweep.sh` — affinity-weight sensitivity
+
+The antigen's six group weights (opcode, block, struct, entropy, style,
+imports) are engineered, all 1.0. `sweep.sh` retrains the whole pipeline
+(self-model → negative selection → clonal maturation) under each weight
+halved and doubled alone, then under 20 random vectors with every weight
+in `[x0.5, x2]`, and re-measures on the `run.sh` split.
+
+```sh
+bench/sweep.sh                 # uses bench/corpus/debian-bin
+bench/sweep.sh --random 50 --json
+```
+
+### Representative result
+
+```
+across 32 perturbed weightings (each weight x0.5..x2):
+  detection     100.0% .. 100.0%   (default 100.0%)
+  FP malicious  0.0% .. 0.0%   (default 0.0%)
+  FP non-clean  0.0% .. 0.0%   (default 0.0%)
+  verdicts changed vs default: mean 0.3%, worst 3.4%
+```
+
+"Verdicts changed" counts any held-out sample whose severity differs
+from the default run (e.g. a family variant going malicious →
+suspicious), not only detection/FP flips.
+
+Honest note: the synthetic family is tiny stubs and the benign corpus is
+real programs, so they sit far apart in antigen space and this is an
+easy separation. Stability here shows the weights are not a knife edge on
+this corpus; it does not show the same for a real malware family that
+lives closer to benign software.
 
 ## `generalize.sh` — recognition of unseen variants
 
