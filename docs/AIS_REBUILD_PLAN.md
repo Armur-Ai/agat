@@ -1,6 +1,9 @@
 # agat → Artificial Immune System: rebuild plan
 
-**Status:** proposal for review. No mechanism code has been written yet.
+**Status:** implemented (Stages 1–7, `agat-antigen` + `agat-immune`, wired
+through `agat-engine` and the CLI). Kept as the design record and honesty
+ledger; where the code and this plan differ, the code and
+[`ARCHITECTURE.md`](ARCHITECTURE.md) are authoritative.
 **Scope:** replace agat's detection/classification *core* with a genuine
 Artificial Immune System (AIS), reusing the existing behavioral pipeline as
 the antigen-presentation layer.

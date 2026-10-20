@@ -147,14 +147,16 @@ agat-meta        metamorphic canonical form + WL hashing         │  (behaviora
 agat-ai          AI-signal detectors                             ┘
 agat-antigen     antigen vector + affinity metric
 agat-immune      self_model · negative_selection · detectors · recognition · clonal · memory · danger
+agat-engine      scan facade: analyze → recognize → danger → one ScanResult (+ SARIF)
 agat-cli         clap entry point
 agat-tui         ratatui demo shell
 ```
 
-A separate companion binary, **`agat-rewriter`**, produces AI-rewritten variants
-of benign or research-known payloads, *solely to provide samples for agat to
-analyze*. Its scope is limited to behavior-preserving stylistic rewrites; it
-refuses samples flagged as malicious.
+Two crates are **reserved stubs with no code yet**: `agat-sandbox` (optional
+dynamic analysis) and `agat-rewriter` (a planned companion that would produce
+AI-rewritten variants of benign or research-known payloads, solely as fixtures
+for agat to analyze). Until it exists, `tools/ai_gen.py` generates the
+AI-rewrite fixtures.
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full pipeline diagram.
 
@@ -162,27 +164,71 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full pipeline diagram
 
 ## Usage
 
+### Train once: model your benign "self" and learn families
+
+Training needs the encrypted vault (it keeps the sample bytes), so these
+commands ask for a vault password (or read `AGAT_VAULT_PASSWORD`).
+
 ```bash
-# Ingest samples into the encrypted vault
-agat ingest ./samples/*.bin
+# Ingest your benign baseline and any confirmed family samples
+agat ingest ./benign/* ./family/*
 
-# Run the behavioral (antigen-presentation) pipeline
-agat analyze <sample-id>
+# Run the behavioral (antigen-presentation) pipeline on everything
+agat analyze
 
-# Build the model of benign "self"
-agat self build --benign <sample-ids...>
+# Build the model of benign "self" (ids from `agat list`; with no ids,
+# every sample tagged "benign" is used)
+agat self build <benign-ids...>
 
 # Generate the detector repertoire via negative selection
-agat repertoire generate
+agat repertoire generate --seed 1
 
-# Recognize an unknown sample: antigen summary, matched detector/family,
-# affinity, danger score, and whether a memory cell responded
-agat recognize <sample-id>
+# Mature the repertoire on confirmed family variants (clonal selection)
+agat mature <sample-id> --family <name>
+```
 
-# Mature the repertoire on a confirmed family variant (clonal selection)
-agat mature <sample-id>
+### Scan: the operator front door
 
-# Classical views still available
+`scan` is stateless: files are analyzed in memory, nothing is written, and
+no vault password is needed, so it runs unattended in CI or cron.
+
+```bash
+agat scan ./suspect.bin                    # human report
+agat scan ./quarantine ./build/out --json  # files and dirs (recursive); JSON array
+agat scan ./artifacts --sarif > agat.sarif # SARIF 2.1.0 for code scanning / SIEM
+agat scan ./artifacts --fail-on malicious  # only a malicious verdict fails the job
+agat scan ./new.bin --ingest               # also add it to the vault library
+echo $?   # 0 clean · 2 review/suspicious · 3 malicious · 1 agat error
+```
+
+`agat recognize <sample-id>` gives the same report for a sample already in
+the library. **How to interpret a result:**
+[`docs/READING_OUTPUT.md`](docs/READING_OUTPUT.md).
+
+### Configure (optional)
+
+`~/.agat/config.toml` (or `--config PATH`); command-line flags override it.
+
+```toml
+[scan]
+output = "json"          # text | json | sarif
+fail_on = "suspicious"   # review | suspicious | malicious | never
+
+[danger]
+dangerous_at = 0.5       # danger score >= this => dangerous
+safe_below = 0.33        # danger score <  this => safe
+
+[allowlist]
+sha256 = ["<64-hex sha256>"]   # always reported clean
+
+[denylist]
+sha256 = ["<64-hex sha256>"]   # always reported malicious (wins)
+```
+
+### Research views
+
+```bash
+agat show <sample-id> --poly --meta --ai   # per-analyzer detail
 agat cluster        # exact CFG-fingerprint clustering
 agat divergence     # cross-variant algorithm-substitution flagging
 agat tui            # interactive demo shell
@@ -190,13 +236,20 @@ agat tui            # interactive demo shell
 
 ---
 
-## Reproducible generalization demo
+## Reproducible evidence
 
-`bench/` ships a reproducible benchmark: it feeds several polymorphic variants of
-a family, matures the repertoire via clonal selection, then asks agat to
-recognize a **held-out** variant it never saw — demonstrating generalization
-rather than memorization. Run it end-to-end with the bundled `tools/*_gen.py`
-sample generators.
+[`bench/`](bench/README.md) measures agat's claims, offline:
+
+- `bench/generalize.sh`: train on 7 metamorphic variants, recognize a
+  **held-out** 8th it never saw (generalization, not memorization).
+- `bench/run.sh --benign-dir …`: **detection rate** over 8 held-out variants
+  and the **false-positive rate** on held-out real benign binaries
+  (220 Debian x86-64 ELFs: 8/8 detected, 0/110 FPs). CI-gateable.
+- `bench/sweep.sh`: retrains under 32 perturbed affinity weightings to show
+  the result is not a hand-tuned knife edge.
+
+The family is synthetic (generated by `tools/*_gen.py`); the honest scope of
+each number is spelled out in `bench/README.md`.
 
 ---
 

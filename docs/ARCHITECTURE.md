@@ -120,7 +120,11 @@ over real behavioral data. It is not a biological simulation.
 ## Data & trust boundaries
 
 - **Vault** — raw sample bytes, encrypted at rest; only `ingest`,
-  `analyze`, and the TUI open it, and only with the vault password.
+  `analyze`, `scan --ingest`, and the TUI open it, and only with the
+  vault password.
+- **Stateless scan** — a plain `agat scan` reads each file, analyzes it
+  in memory (`AnalysisContext::in_memory`), and recognizes it against the
+  stored model. Nothing is written to the vault or the store.
 - **Store** — extracted features and learned immune state (self-model,
   repertoire, memory pool). Recognition and the immune commands read this
   and never touch the vault, so they run non-interactively.
@@ -132,7 +136,7 @@ over real behavioral data. It is not a biological simulation.
 
 `ScanResult` (in `agat-core`) is the stable, serializable answer: both
 axes plus the fused `Severity`, tagged with `SCAN_SCHEMA_VERSION`. The CLI
-renders it for humans and emits it as JSON (`agat recognize --json`); the
+renders it for humans and emits it as JSON or SARIF (`--json`, `--sarif`); the
 severity drives the process exit code (`0` clean · `2` needs a human ·
 `3` non-self + dangerous). The fusion policy lives in exactly one place
 (`ScanResult::fuse`) so every front end agrees.
