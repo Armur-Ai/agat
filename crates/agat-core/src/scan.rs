@@ -31,7 +31,10 @@ pub const SCAN_SCHEMA_VERSION: &str = "agat.scan/v1";
 /// axes (recognition and danger) carried in the same [`ScanResult`].
 /// A consumer that disagrees with the fusion policy can ignore this and
 /// act on the raw axes directly.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// Variants are ordered by severity (`Clean < Review < Suspicious <
+/// Malicious`), so `max()` over a batch yields the worst verdict.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Severity {
     /// Within self / unrecognized, no notable danger — no action.
@@ -160,6 +163,11 @@ pub struct Verdict {
     pub severity: Severity,
     /// One-line human explanation of *why* this severity.
     pub summary: String,
+    /// Set when an operator policy (an allowlist or denylist entry)
+    /// overrode the fused verdict: `"allowlist"` or `"denylist"`. The
+    /// recognition and danger axes are still reported unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub policy: Option<String>,
 }
 
 /// The complete, machine-readable outcome of scanning one sample.
@@ -222,7 +230,7 @@ impl ScanResult {
                 "within self / unrecognized — no action".to_string(),
             ),
         };
-        Verdict { severity, summary }
+        Verdict { severity, summary, policy: None }
     }
 }
 
@@ -254,6 +262,13 @@ mod tests {
         for s in [Severity::Clean, Severity::Review, Severity::Suspicious, Severity::Malicious] {
             assert_ne!(s.exit_code(), 1);
         }
+    }
+
+    #[test]
+    fn severity_orders_from_clean_to_malicious() {
+        assert!(Severity::Clean < Severity::Review);
+        assert!(Severity::Review < Severity::Suspicious);
+        assert!(Severity::Suspicious < Severity::Malicious);
     }
 
     #[test]

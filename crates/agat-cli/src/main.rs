@@ -1,5 +1,6 @@
 //! agat command-line entry point.
 
+mod config;
 mod immune;
 
 use agat_ai::AiFeatures;
@@ -24,6 +25,10 @@ struct Cli {
     /// Override the agat data directory (defaults to ~/.agat or $AGAT_HOME).
     #[arg(long, global = true)]
     home: Option<PathBuf>,
+
+    /// Config file (defaults to `config.toml` in the agat data directory).
+    #[arg(long, global = true)]
+    config: Option<PathBuf>,
 
     #[command(subcommand)]
     command: Cmd,
@@ -93,9 +98,8 @@ enum Cmd {
     Recognize {
         /// Sample id (full SHA-256 or unique prefix).
         id: String,
-        /// Emit the full ScanResult as JSON instead of the human report.
-        #[arg(long)]
-        json: bool,
+        #[command(flatten)]
+        out: OutputArgs,
     },
     /// Scan files or directories end to end: analyze and recognize in one
     /// shot. Stateless by default — files are analyzed in memory and
@@ -109,15 +113,50 @@ enum Cmd {
         /// (and persist its features), as `agat ingest` + `analyze` would.
         #[arg(long)]
         ingest: bool,
-        /// Emit ScanResult JSON (an object for one file, an array for a batch).
-        #[arg(long, conflicts_with = "sarif")]
-        json: bool,
-        /// Emit a SARIF 2.1.0 log (one finding per non-clean sample).
-        #[arg(long)]
-        sarif: bool,
+        #[command(flatten)]
+        out: OutputArgs,
     },
     /// Launch the interactive TUI.
     Tui,
+}
+
+/// Output and exit-code flags shared by `scan` and `recognize`. Each
+/// overrides the corresponding `[scan]` setting in the config file.
+#[derive(clap::Args)]
+struct OutputArgs {
+    /// Output format: text, json (an object for one file, an array for a
+    /// batch), or sarif (SARIF 2.1.0, one finding per non-clean sample).
+    #[arg(long, value_enum, conflicts_with_all = ["json", "sarif"])]
+    output: Option<config::OutputFormat>,
+    /// Shorthand for `--output json`.
+    #[arg(long, conflicts_with = "sarif")]
+    json: bool,
+    /// Shorthand for `--output sarif`.
+    #[arg(long)]
+    sarif: bool,
+    /// Lowest severity that makes the command exit non-zero
+    /// (default: review).
+    #[arg(long, value_enum)]
+    fail_on: Option<config::FailOn>,
+}
+
+impl OutputArgs {
+    fn resolve(&self, cfg: &config::Config) -> (config::OutputFormat, config::FailOn) {
+        let format = if self.json {
+            config::OutputFormat::Json
+        } else if self.sarif {
+            config::OutputFormat::Sarif
+        } else {
+            self.output
+                .or(cfg.scan.output)
+                .unwrap_or(config::OutputFormat::Text)
+        };
+        let fail_on = self
+            .fail_on
+            .or(cfg.scan.fail_on)
+            .unwrap_or(config::FailOn::Review);
+        (format, fail_on)
+    }
 }
 
 #[derive(Subcommand)]
@@ -163,6 +202,7 @@ fn main() -> Result<()> {
     let agat_home = resolve_home(cli.home.as_deref())?;
     std::fs::create_dir_all(&agat_home)
         .with_context(|| format!("creating agat home at {}", agat_home.display()))?;
+    let cfg = config::Config::load(cli.config.as_deref(), &agat_home)?;
     let vault_path = agat_home.join("vault");
     let store_path = agat_home.join("store.db");
 
@@ -208,35 +248,20 @@ fn main() -> Result<()> {
             } => immune::cmd_repertoire_generate(max_detectors, tolerance, coverage, seed, &store),
         },
         Cmd::Mature { id, family } => immune::cmd_mature(id, family, &store),
-        Cmd::Recognize { id, json } => {
-            let format = if json {
-                immune::OutputFormat::Json
-            } else {
-                immune::OutputFormat::Text
-            };
-            let code = immune::cmd_recognize(id, format, &store)?;
+        Cmd::Recognize { id, out } => {
+            let (format, fail_on) = out.resolve(&cfg);
+            let severity = immune::cmd_recognize(id, format, cfg.policy()?, &store)?;
             // The verdict severity is the command's real result, surfaced
             // as the process exit code. Drop the store first so sqlite
             // flushes cleanly before we exit.
             drop(store);
-            std::process::exit(code);
+            std::process::exit(fail_on.exit_code(severity));
         }
-        Cmd::Scan {
-            paths,
-            ingest: _,
-            json,
-            sarif,
-        } => {
-            let format = if sarif {
-                immune::OutputFormat::Sarif
-            } else if json {
-                immune::OutputFormat::Json
-            } else {
-                immune::OutputFormat::Text
-            };
-            let code = cmd_scan(&paths, format, vault.as_ref(), &store)?;
+        Cmd::Scan { paths, ingest: _, out } => {
+            let (format, fail_on) = out.resolve(&cfg);
+            let worst = cmd_scan(&paths, format, cfg.policy()?, vault.as_ref(), &store)?;
             drop(store);
-            std::process::exit(code);
+            std::process::exit(fail_on.exit_code(worst));
         }
         Cmd::Tui => agat_tui::run(vault.expect("tui needs a vault"), store).context("running tui"),
     }
@@ -342,8 +367,8 @@ fn collect_files(path: &std::path::Path) -> Result<Vec<PathBuf>> {
 
 /// `agat scan <path...>` — the operator front door: analyze and recognize
 /// every file given (directories are walked recursively), then render the
-/// results. Returns the worst verdict severity's exit code over the
-/// batch. Requires a trained model to be present.
+/// results. Returns the worst verdict severity over the batch. Requires a
+/// trained model to be present.
 ///
 /// With `vault` = `None` the scan is stateless: each file is analyzed in
 /// memory and nothing is written. With a vault (`--ingest`), each file is
@@ -351,9 +376,10 @@ fn collect_files(path: &std::path::Path) -> Result<Vec<PathBuf>> {
 fn cmd_scan(
     paths: &[PathBuf],
     format: immune::OutputFormat,
+    policy: agat_engine::ScanPolicy,
     vault: Option<&Vault>,
     store: &Store,
-) -> Result<i32> {
+) -> Result<agat_core::Severity> {
     let mut files = Vec::new();
     for p in paths {
         files.extend(collect_files(p)?);
@@ -366,7 +392,7 @@ fn cmd_scan(
     let single = files.len() == 1;
 
     // Load the trained model once for the whole batch.
-    let model = agat_engine::ImmuneModel::load(store)?;
+    let model = agat_engine::ImmuneModel::load(store)?.with_policy(policy);
     let mut results = Vec::with_capacity(files.len());
     for file in &files {
         let name = file.to_str().map(String::from);
@@ -415,12 +441,11 @@ fn cmd_scan(
     }
 
     // Worst severity across the batch drives the exit code.
-    let code = results
+    Ok(results
         .iter()
-        .map(|r| r.severity().exit_code())
+        .map(|r| r.severity())
         .max()
-        .unwrap_or(0);
-    Ok(code)
+        .unwrap_or(agat_core::Severity::Clean))
 }
 
 fn cmd_ingest(paths: Vec<PathBuf>, vault: &Vault, store: &Store) -> Result<()> {

@@ -11,23 +11,14 @@
 use agat_antigen::Antigen;
 use agat_core::{ScanResult, Severity};
 use agat_engine::{
-    antigen_from_map, feature_map, load_memory, load_repertoire, load_self_model, scan_sample,
-    SLOT,
+    antigen_from_map, feature_map, load_memory, load_repertoire, load_self_model, ImmuneModel,
+    ScanPolicy, SLOT,
 };
 use agat_immune::{generate_repertoire, mature, NsaConfig, SelfModel};
 use agat_store::Store;
 use anyhow::{bail, Result};
 
-/// Output format for the `recognize` and `scan` commands.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OutputFormat {
-    /// Human-readable, multi-axis report (the default).
-    Text,
-    /// `ScanResult` JSON (a single object, or an array for a batch).
-    Json,
-    /// SARIF 2.1.0 log — one finding per non-clean sample.
-    Sarif,
-}
+pub use crate::config::OutputFormat;
 
 // ---- commands ------------------------------------------------------
 
@@ -174,16 +165,21 @@ pub fn cmd_mature(input: String, family: String, store: &Store) -> Result<()> {
     Ok(())
 }
 
-/// `agat recognize <id> [--json]` — present the sample's antigen to the
-/// immune system (recognition + danger) via the engine, and render the
+/// `agat recognize <id>` — present the sample's antigen to the immune
+/// system (recognition + danger) via the engine, and render the
 /// resulting [`ScanResult`].
 ///
-/// Returns the verdict's process exit code so a pipeline can branch on
-/// the outcome without parsing output: `0` clean, `2` needs a human,
-/// `3` non-self + dangerous. (`1` stays reserved for a tool error.)
-pub fn cmd_recognize(input: String, format: OutputFormat, store: &Store) -> Result<i32> {
+/// Returns the verdict severity; the caller maps it to the process exit
+/// code so a pipeline can branch on the outcome without parsing output.
+pub fn cmd_recognize(
+    input: String,
+    format: OutputFormat,
+    policy: ScanPolicy,
+    store: &Store,
+) -> Result<Severity> {
     let id = crate::resolve_sample_id(&input, store)?;
-    let result = scan_sample(store, &id, None)?;
+    let model = ImmuneModel::load(store)?.with_policy(policy);
+    let result = model.scan(&id, None, &feature_map(store, &id)?)?;
     match format {
         OutputFormat::Json => println!("{}", serde_json::to_string_pretty(&result)?),
         OutputFormat::Sarif => println!(
@@ -194,7 +190,7 @@ pub fn cmd_recognize(input: String, format: OutputFormat, store: &Store) -> Resu
         ),
         OutputFormat::Text => print_report(&result),
     }
-    Ok(result.severity().exit_code())
+    Ok(result.severity())
 }
 
 /// Render a [`ScanResult`] as the human-readable, two-axis report.
@@ -260,4 +256,7 @@ pub fn print_report(r: &ScanResult) {
         Severity::Clean => "clean",
     };
     println!("  [{tag}] {}", r.verdict.summary);
+    if r.verdict.policy.is_some() {
+        println!("  (verdict set by operator policy; the axes above are unchanged)");
+    }
 }

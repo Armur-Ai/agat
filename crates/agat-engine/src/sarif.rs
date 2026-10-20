@@ -152,7 +152,7 @@ mod tests {
                 safe: 0.1,
                 signals: vec![],
             },
-            verdict: Verdict { severity: sev, summary: "s".into() },
+            verdict: Verdict { severity: sev, summary: "s".into(), policy: None },
         }
     }
 

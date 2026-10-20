@@ -20,7 +20,7 @@
 
 pub mod sarif;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use agat_ai::{AiAnalyzer, AiFeatures};
 use agat_disasm::DisasmAnalyzer;
@@ -28,8 +28,8 @@ use agat_meta::MetaAnalyzer;
 use agat_antigen::{Antigen, AntigenConfig};
 use agat_core::{
     AnalysisContext, Analyzer, AntigenSummary, DangerSummary, RecognitionSummary, Sample,
-    SampleId, SampleKind, SampleMetadata, SampleRef, ScanResult, SignalSummary,
-    SCAN_SCHEMA_VERSION,
+    SampleId, SampleKind, SampleMetadata, SampleRef, ScanResult, Severity, SignalSummary,
+    Verdict, SCAN_SCHEMA_VERSION,
 };
 use agat_immune::danger::{assess, signals_from_features, DangerAssessment, SignalClass};
 use agat_immune::{
@@ -152,6 +152,39 @@ pub enum ScanError {
     NoRepertoire,
 }
 
+/// Operator policy applied at scan time. None of it changes the trained
+/// model: the danger thresholds re-weigh the danger axis, and the hash
+/// lists override the fused verdict for known files.
+#[derive(Debug, Clone, Default)]
+pub struct ScanPolicy {
+    /// DCA weights and decision thresholds for the danger axis.
+    pub danger: DangerConfig,
+    /// Lower-case SHA-256 hashes always reported clean.
+    pub allow_sha256: HashSet<String>,
+    /// Lower-case SHA-256 hashes always reported malicious. A hash on both
+    /// lists is treated as denylisted.
+    pub deny_sha256: HashSet<String>,
+}
+
+impl ScanPolicy {
+    /// Apply the hash lists to an assembled result, overriding its verdict
+    /// when the sample is listed.
+    pub fn apply(&self, result: &mut ScanResult) {
+        let (severity, summary, list) = if self.deny_sha256.contains(&result.sample.id) {
+            (Severity::Malicious, "denylisted by policy — sha256 match", "denylist")
+        } else if self.allow_sha256.contains(&result.sample.id) {
+            (Severity::Clean, "allowlisted by policy — sha256 match", "allowlist")
+        } else {
+            return;
+        };
+        result.verdict = Verdict {
+            severity,
+            summary: summary.to_string(),
+            policy: Some(list.to_string()),
+        };
+    }
+}
+
 /// The persisted immune state needed to scan: the negative-selection
 /// repertoire merged with learned memory cells, plus the self-model.
 /// Load it once and reuse it across a batch.
@@ -159,6 +192,7 @@ pub struct ImmuneModel {
     combined: Repertoire,
     self_model: Option<SelfModel>,
     known_families: usize,
+    policy: ScanPolicy,
 }
 
 impl ImmuneModel {
@@ -177,7 +211,14 @@ impl ImmuneModel {
             combined: Repertoire { dim: repertoire.dim, detectors },
             self_model,
             known_families: memory.families().len(),
+            policy: ScanPolicy::default(),
         })
+    }
+
+    /// Scan under `policy` instead of the defaults.
+    pub fn with_policy(mut self, policy: ScanPolicy) -> Self {
+        self.policy = policy;
+        self
     }
 
     /// Present a sample's feature map to the immune system (recognition +
@@ -204,9 +245,11 @@ impl ImmuneModel {
             ai.as_ref(),
             recognition.self_surface_distance,
         );
-        let danger = assess(&signals, &DangerConfig::default());
+        let danger = assess(&signals, &self.policy.danger);
 
-        Ok(assemble(id, name, &antigen, &recognition, &danger, self.known_families))
+        let mut result = assemble(id, name, &antigen, &recognition, &danger, self.known_families);
+        self.policy.apply(&mut result);
+        Ok(result)
     }
 
     /// Stateless one-shot scan: analyze `bytes` in memory and recognize
@@ -412,6 +455,36 @@ mod tests {
         for name in ["static", "disasm", "poly", "meta", "ai"] {
             assert!(map.contains_key(name), "missing {name} features");
         }
+    }
+
+    #[test]
+    fn policy_lists_override_the_verdict_and_deny_wins() {
+        let id = SampleId([7u8; 32]);
+        let fresh = || {
+            assemble(&id, None, &antigen(), &recognition_nonself_family(), &danger(0.81, DangerContext::Dangerous), 1)
+        };
+        let mut policy = ScanPolicy::default();
+
+        // Unlisted: untouched.
+        let mut r = fresh();
+        policy.apply(&mut r);
+        assert_eq!(r.severity(), Severity::Malicious);
+        assert!(r.verdict.policy.is_none());
+
+        // Allowlisted: clean, axes still reported.
+        policy.allow_sha256.insert(id.to_hex());
+        let mut r = fresh();
+        policy.apply(&mut r);
+        assert_eq!(r.severity(), Severity::Clean);
+        assert_eq!(r.verdict.policy.as_deref(), Some("allowlist"));
+        assert!(r.recognition.recognized);
+
+        // On both lists: deny wins.
+        policy.deny_sha256.insert(id.to_hex());
+        let mut r = fresh();
+        policy.apply(&mut r);
+        assert_eq!(r.severity(), Severity::Malicious);
+        assert_eq!(r.verdict.policy.as_deref(), Some("denylist"));
     }
 
     #[test]

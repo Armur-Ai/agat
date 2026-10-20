@@ -85,7 +85,7 @@ impl DangerContext {
 /// The DCA weight transform and decision thresholds. Defaults follow the
 /// canonical DCA weighting (PAMP and danger drive maturity; safe drives
 /// the semi-mature, tolerogenic context).
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct DangerConfig {
     // Costimulation (signal strength / confidence) weights.
     pub csm_pamp: f64,

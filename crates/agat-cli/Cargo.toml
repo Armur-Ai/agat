@@ -32,3 +32,4 @@ serde_json.workspace = true
 clap.workspace = true
 rpassword.workspace = true
 dirs.workspace = true
+toml.workspace = true
