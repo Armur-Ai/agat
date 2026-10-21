@@ -78,6 +78,8 @@ math, not a biological simulation:
 |---|---|---|
 | PAMP | `decryptor_with_recovered_key` | a decryptor loop was found **and** its key recovered |
 | PAMP | `llm_artifact` | LLM artifacts embedded (refusals, ChatML, prompts, model magic) |
+| PAMP | `packer_section_name` | a known packer's section name (UPX, ASPack, Themida, VMProtect, …) |
+| PAMP | `high_entropy_executable_section` | executable code that is near-random — packed/encrypted |
 | danger | `high_entropy_region` / `very_high_overall_entropy` | packed or encrypted data |
 | danger | `writable_executable_section` | a W+X section (self-modifying code) |
 | danger | `suspicious_import` | an import used for injection, memory-protection changes, code loading or exec (`VirtualProtect`, `WriteProcessMemory`, `mprotect`, `ptrace`, `dlopen`, `execve`, `mmap`, …). Common in ordinary programs too, hence only a danger signal. |
