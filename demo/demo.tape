@@ -13,46 +13,65 @@ Require bash
 Set Shell "bash"
 Set FontFamily "JetBrains Mono, Menlo, monospace"
 Set FontSize 15
-Set Width 1180
-Set Height 700
-Set Padding 24
+Set Width 1200
+Set Height 760
+Set Padding 22
 Set Theme "Catppuccin Mocha"
-Set TypingSpeed 35ms
+Set TypingSpeed 32ms
 Set WindowBar Colorful
 Set WindowBarSize 36
 
 Hide
-Type "cd demo/.work/local && export PATH=$PWD/../../../target/release:$PATH AGAT_HOME=$PWD/home && unset NO_COLOR && export PS1='\[\e[1;36m\]agat\[\e[0m\] ❯ ' && clear"
+Type "cd demo/.work/local && export PATH=$PWD/../../../target/release:$PATH AGAT_HOME=$PWD/home && unset NO_COLOR && export PS1='\[\e[1;35m\]agat\[\e[0m\] ❯ ' && clear"
 Enter
-Sleep 500ms
+Sleep 400ms
 Show
 
-Type "# a folder of binaries agat has never seen"
-Sleep 700ms
+# the splash: agat with no command
+Type "agat"
+Sleep 400ms
+Enter
+Sleep 3.2s
+Type "clear"
+Enter
+Sleep 200ms
+
+# scan a folder agat has never seen — one line per file
+Type "# point it at a folder of unknown binaries"
+Sleep 600ms
 Enter
 Type "agat scan suspects --output table"
-Sleep 500ms
+Sleep 400ms
 Enter
-Sleep 4s
+Sleep 3.5s
 
-Type "# zoom in: an AI-rewritten variant — new algorithm, same payload"
-Sleep 700ms
+# the full immune report for the AI-rewritten variant
+Type "# the AI-rewritten one — same payload, new algorithm"
+Sleep 600ms
 Enter
-Type "agat scan suspects/ai_rewritten.bin | head -30"
-Sleep 500ms
+Type "agat scan suspects/ai_rewritten.bin"
+Sleep 400ms
 Enter
-Sleep 7s
+Sleep 5.5s
 
 Type "clear"
 Enter
-Type "# drop it into CI: SARIF out, the exit code gates the build"
-Sleep 700ms
+Sleep 200ms
+
+# are two samples related? (two trained family variants)
+Type "# are these two samples related, and where?"
+Sleep 600ms
+Enter
+Type "agat diff $(agat list | awk '/fam_v1/{print $1}') $(agat list | awk '/fam_v5/{print $1}') | head -22"
+Sleep 400ms
+Enter
+Sleep 5s
+
+# pipeline: SARIF + exit code
+Type "# drop it into CI — SARIF out, exit code gates the build"
+Sleep 600ms
 Enter
 Type "agat scan suspects --sarif > agat.sarif; echo exit=$?"
-Sleep 500ms
+Sleep 400ms
 Enter
-Sleep 3s
-Type "grep -c ruleId agat.sarif   # one finding per non-clean file"
-Sleep 500ms
-Enter
-Sleep 4s
+Sleep 2.5s
