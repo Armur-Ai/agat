@@ -116,6 +116,65 @@ pub fn analyze_bytes(
     Ok((sample, ctx.previous_features))
 }
 
+/// How two samples' antigens compare, for `agat diff`: the blended
+/// affinity, cosine over the full signature, Jaccard over canonical
+/// block tokens, whether the CFG and recovered-plaintext fingerprints
+/// match, and per-feature-group cosine so an analyst sees *where* they
+/// agree or differ.
+pub struct AntigenDiff {
+    pub affinity: f64,
+    pub cosine: f64,
+    pub jaccard: f64,
+    pub shared_cfg: Option<bool>,
+    pub shared_plaintext: Option<bool>,
+    /// (group name, cosine in [0,1]) for opcode, block, cfg, entropy,
+    /// style, imports — in signature order.
+    pub groups: Vec<(String, f64)>,
+}
+
+/// Compare two feature maps as antigens, using the default metric space.
+pub fn diff_feature_maps(
+    a: &HashMap<String, serde_json::Value>,
+    b: &HashMap<String, serde_json::Value>,
+) -> AntigenDiff {
+    use agat_antigen::{cosine_similarity, jaccard, signature_labels, AffinityConfig};
+    let cfg = antigen_config();
+    let ag = antigen_from_map(a);
+    let bg = antigen_from_map(b);
+
+    // Per-group cosine: partition the signature dimensions by the group
+    // prefix of their labels ("opcode:…", "block:…", …).
+    let labels = signature_labels(&cfg);
+    let mut groups: Vec<(String, f64)> = Vec::new();
+    let (mut i, n) = (
+        0usize,
+        labels.len().min(ag.signature.len()).min(bg.signature.len()),
+    );
+    while i < n {
+        let group = labels[i].split(':').next().unwrap_or("").to_string();
+        let start = i;
+        while i < n && labels[i].split(':').next().unwrap_or("") == group {
+            i += 1;
+        }
+        let cos = cosine_similarity(&ag.signature[start..i], &bg.signature[start..i]);
+        groups.push((group, cos));
+    }
+
+    let opt_match = |x: &Option<String>, y: &Option<String>| match (x, y) {
+        (Some(x), Some(y)) => Some(x == y),
+        _ => None,
+    };
+
+    AntigenDiff {
+        affinity: agat_antigen::affinity(&ag, &bg, &AffinityConfig::default()),
+        cosine: cosine_similarity(&ag.signature, &bg.signature),
+        jaccard: jaccard(&ag.block_tokens, &bg.block_tokens),
+        shared_cfg: opt_match(&ag.cfg_fingerprint, &bg.cfg_fingerprint),
+        shared_plaintext: opt_match(&ag.plaintext_fingerprint, &bg.plaintext_fingerprint),
+        groups,
+    }
+}
+
 /// Load the persisted self-model, if one has been built.
 pub fn load_self_model(store: &Store) -> Result<Option<SelfModel>> {
     match store.get_self_model(SLOT)? {
@@ -599,6 +658,28 @@ mod tests {
                 assert!(map.contains_key(name), "input {i}: missing {name} features");
             }
         }
+    }
+
+    #[test]
+    fn diff_of_identical_feature_maps_is_maximal() {
+        let bytes =
+            b"\x7fELF a reasonably sized blob of bytes to analyze and diff against".to_vec();
+        let (_, map) = analyze_bytes(&bytes, None).unwrap();
+        let d = diff_feature_maps(&map, &map);
+        assert!((d.cosine - 1.0).abs() < 1e-9, "cosine {}", d.cosine);
+        // Non-x86 input has no block tokens, so jaccard is 0 by definition;
+        // every group with any signal is self-similar at 1.0.
+        for (g, cos) in &d.groups {
+            assert!(*cos <= 1.0 + 1e-9 && *cos >= 0.0, "{g} cosine {cos}");
+        }
+        // Two unrelated inputs share far less.
+        let (_, other) = analyze_bytes(
+            b"totally different content with words and numbers 12345",
+            None,
+        )
+        .unwrap();
+        let d2 = diff_feature_maps(&map, &other);
+        assert!(d2.cosine <= d.cosine + 1e-9);
     }
 
     #[test]

@@ -159,6 +159,16 @@ enum Cmd {
         #[arg(long)]
         ai: bool,
     },
+    /// Compare two library samples: are they related, and where?
+    ///
+    /// Reports the blended affinity, cosine and Jaccard, shared CFG and
+    /// plaintext fingerprints, and per-feature-group similarity.
+    Diff {
+        /// First sample id (full SHA-256 or unique prefix).
+        a: String,
+        /// Second sample id.
+        b: String,
+    },
     /// Group library samples by metamorphic CFG fingerprint.
     Cluster,
     /// Flag LLM-style rewrites: same payload, different control flow.
@@ -380,6 +390,7 @@ fn main() -> Result<()> {
             meta,
             ai,
         } => cmd_show(id, disasm, poly, meta, ai, &store),
+        Cmd::Diff { a, b } => cmd_diff(a, b, &store),
         Cmd::Cluster => cmd_cluster(&store),
         Cmd::Divergence => cmd_divergence(&store),
         Cmd::SelfNs { cmd } => match cmd {
@@ -1052,6 +1063,53 @@ fn cmd_divergence(store: &Store) -> Result<()> {
     if !any_divergence {
         println!("no divergence detected — all plaintext families share one CFG fingerprint.");
     }
+    Ok(())
+}
+
+fn cmd_diff(a: String, b: String, store: &Store) -> Result<()> {
+    let id_a = resolve_sample_id(&a, store)?;
+    let id_b = resolve_sample_id(&b, store)?;
+    let map_a = agat_engine::feature_map(store, &id_a)?;
+    let map_b = agat_engine::feature_map(store, &id_b)?;
+    if map_a.is_empty() || map_b.is_empty() {
+        anyhow::bail!("both samples must be analyzed first (`agat analyze`)");
+    }
+    let d = agat_engine::diff_feature_maps(&map_a, &map_b);
+
+    println!("diff  {}  vs  {}", id_a.short(), id_b.short());
+    println!();
+    println!("  affinity (blended)  {:.3}", d.affinity);
+    println!("  cosine (signature)  {:.3}", d.cosine);
+    println!("  jaccard (blocks)    {:.3}", d.jaccard);
+    let yn = |o: Option<bool>| match o {
+        Some(true) => "yes",
+        Some(false) => "no",
+        None => "n/a",
+    };
+    println!("  same CFG fingerprint        {}", yn(d.shared_cfg));
+    println!("  same plaintext fingerprint  {}", yn(d.shared_plaintext));
+
+    println!("\n  per feature group (cosine):");
+    for (group, cos) in &d.groups {
+        let bar_len = (cos.clamp(0.0, 1.0) * 24.0).round() as usize;
+        let bar: String = "█".repeat(bar_len);
+        println!("    {:<10} {:.3}  {}", group, cos, bar);
+    }
+
+    // A plain-language read of the result.
+    println!();
+    let verdict = if d.shared_plaintext == Some(true) && d.shared_cfg == Some(false) {
+        "same payload, different control flow — the algorithm-substitution signature of an LLM rewrite"
+    } else if d.shared_cfg == Some(true) {
+        "same canonical control flow — metamorphic siblings (register/encoding/instruction variants)"
+    } else if d.affinity >= 0.7 {
+        "closely related behavior"
+    } else if d.affinity >= 0.3 {
+        "some shared behavior"
+    } else {
+        "little in common"
+    };
+    println!("  → {verdict}");
     Ok(())
 }
 

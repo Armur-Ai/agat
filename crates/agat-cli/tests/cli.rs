@@ -214,6 +214,39 @@ fn stateless_scan_contract() {
 }
 
 #[test]
+fn diff_compares_two_analyzed_samples() {
+    let env = Env::new();
+    // Two ingested, analyzed files; no model needed for diff.
+    let f1 = env.write(
+        "a.txt",
+        format!("{}unique-a\n", "shared preamble\n".repeat(60)).as_bytes(),
+    );
+    let f2 = env.write(
+        "b.txt",
+        format!("{}unique-b\n", "shared preamble\n".repeat(60)).as_bytes(),
+    );
+    ok(&env.agat(&["ingest", f1.to_str().unwrap(), f2.to_str().unwrap()]));
+    ok(&env.agat(&["analyze"]));
+    let list = stdout(&env.agat(&["list"]));
+    let ids: Vec<&str> = list
+        .lines()
+        .skip(1)
+        .filter_map(|l| l.split_whitespace().next())
+        .collect();
+    assert_eq!(ids.len(), 2);
+    let out = env.agat(&["diff", ids[0], ids[1]]);
+    ok(&out);
+    let s = stdout(&out);
+    assert!(s.contains("affinity (blended)"), "{s}");
+    assert!(s.contains("per feature group"), "{s}");
+    // Near-identical content ⇒ very high cosine.
+    assert!(
+        s.contains("cosine (signature)  1.0") || s.contains("cosine (signature)  0.9"),
+        "{s}"
+    );
+}
+
+#[test]
 fn deny_list_in_config_overrides_the_verdict() {
     let env = Env::new();
     env.train();
