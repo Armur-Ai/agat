@@ -1,0 +1,335 @@
+{
+  "$defs": {
+    "AntigenSummary": {
+      "description": "A compact view of the antigen presented to the immune system.",
+      "properties": {
+        "blocks": {
+          "description": "Number of canonical basic blocks tokenized.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "cfg_fingerprint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dim": {
+          "description": "Dimensionality of the behavioral signature.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "plaintext_fingerprint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "dim",
+        "blocks"
+      ],
+      "type": "object"
+    },
+    "DangerSummary": {
+      "description": "The danger axis: DCA-style fusion of real harm signals.",
+      "properties": {
+        "context": {
+          "description": "Discrete context label: `inconclusive` / `safe` / `ambiguous` /\n`dangerous`.",
+          "type": "string"
+        },
+        "danger": {
+          "format": "double",
+          "type": "number"
+        },
+        "pamp": {
+          "description": "Aggregate PAMP, danger, and safe signal strengths.",
+          "format": "double",
+          "type": "number"
+        },
+        "safe": {
+          "format": "double",
+          "type": "number"
+        },
+        "score": {
+          "description": "Fused danger score in `[0, 1]`.",
+          "format": "double",
+          "type": "number"
+        },
+        "signals": {
+          "description": "Individual contributing signals, strongest first.",
+          "items": {
+            "$ref": "#/$defs/SignalSummary"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "score",
+        "context",
+        "pamp",
+        "danger",
+        "safe",
+        "signals"
+      ],
+      "type": "object"
+    },
+    "ModelRef": {
+      "description": "Which trained model produced a result: needed to audit or reproduce\na verdict, since the same file can score differently under another\nmodel.",
+      "properties": {
+        "antigen_fingerprint": {
+          "description": "Fingerprint of the antigen metric space the model scores in.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Pack name and version (packs only).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sha256": {
+          "description": "SHA-256 of the pack payload (packs only).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "signer": {
+          "description": "Key id of the pack's trusted signer (signed packs only).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "description": "`\"pack\"` for an imported model pack, `\"local\"` for a model trained\nin this agat home.",
+          "type": "string"
+        },
+        "version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "source",
+        "antigen_fingerprint"
+      ],
+      "type": "object"
+    },
+    "RecognitionSummary": {
+      "description": "The recognition axis: is this non-self, and whose family is it?",
+      "properties": {
+        "affinity": {
+          "description": "Binding affinity in `[0, 1]` of the strongest binder.",
+          "format": "double",
+          "type": "number"
+        },
+        "bound_detectors": {
+          "description": "How many detectors bound.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "family": {
+          "description": "Identified family, if a family-bearing detector bound.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "known_families": {
+          "description": "How many families the memory pool knew at scan time.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "recognized": {
+          "description": "Whether any detector bound the antigen (non-self).",
+          "type": "boolean"
+        },
+        "secondary_response": {
+          "description": "Whether the family attribution came from a memory cell (a fast\nsecondary response).",
+          "type": "boolean"
+        },
+        "self_surface_distance": {
+          "description": "Signed distance from the self surface: positive ⇒ outside self.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "verdict": {
+          "description": "Compact human label for the recognition outcome.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "recognized",
+        "verdict",
+        "affinity",
+        "bound_detectors",
+        "secondary_response",
+        "known_families"
+      ],
+      "type": "object"
+    },
+    "SampleRef": {
+      "description": "Which sample this result is about.",
+      "properties": {
+        "id": {
+          "description": "Full content id (hex).",
+          "type": "string"
+        },
+        "name": {
+          "description": "Original file name or path, if the scan knew one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "short": {
+          "description": "Short, human-friendly id prefix.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "short"
+      ],
+      "type": "object"
+    },
+    "Severity": {
+      "description": "The fused, actionable severity for a scanned sample.\n\nThis is agat's *recommendation*, derived from the two independent\naxes (recognition and danger) carried in the same [`ScanResult`].\nA consumer that disagrees with the fusion policy can ignore this and\nact on the raw axes directly.\n\nVariants are ordered by severity (`Clean < Review < Suspicious <\nMalicious`), so `max()` over a batch yields the worst verdict.",
+      "oneOf": [
+        {
+          "const": "clean",
+          "description": "Within self / unrecognized, no notable danger — no action.",
+          "type": "string"
+        },
+        {
+          "const": "review",
+          "description": "A single axis is mild: non-self but low danger (likely\nbenign-but-unusual), or within-self yet carrying danger signals.\nWorth a human glance, not an alarm.",
+          "type": "string"
+        },
+        {
+          "const": "suspicious",
+          "description": "Non-self with ambiguous danger — the two axes neither clearly\nagree nor clearly clear it. Triage.",
+          "type": "string"
+        },
+        {
+          "const": "malicious",
+          "description": "Recognition and danger agree: non-self *and* dangerous.\nInvestigate now.",
+          "type": "string"
+        }
+      ]
+    },
+    "SignalSummary": {
+      "description": "One DCA signal contribution.",
+      "properties": {
+        "class": {
+          "description": "Signal class: `pamp`, `danger`, or `safe`.",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "class",
+        "name",
+        "value"
+      ],
+      "type": "object"
+    },
+    "Verdict": {
+      "description": "The fused verdict: agat's one-line recommendation plus the inputs it\nwas fused from (kept alongside so a consumer never has to re-derive).",
+      "properties": {
+        "policy": {
+          "description": "Set when an operator policy (an allowlist or denylist entry)\noverrode the fused verdict: `\"allowlist\"` or `\"denylist\"`. The\nrecognition and danger axes are still reported unchanged.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "severity": {
+          "$ref": "#/$defs/Severity",
+          "description": "The actionable severity."
+        },
+        "summary": {
+          "description": "One-line human explanation of *why* this severity.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "severity",
+        "summary"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "The complete, machine-readable outcome of scanning one sample.\n\nSerialize this to JSON for pipelines; render [`verdict`](Self::verdict)\nand the two axes for a human.",
+  "properties": {
+    "agat_version": {
+      "description": "The agat version that produced this result.",
+      "type": "string"
+    },
+    "antigen": {
+      "$ref": "#/$defs/AntigenSummary"
+    },
+    "danger": {
+      "$ref": "#/$defs/DangerSummary"
+    },
+    "model": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ModelRef"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "The model that produced this result. Absent only in results\nwritten before this field existed."
+    },
+    "recognition": {
+      "$ref": "#/$defs/RecognitionSummary"
+    },
+    "sample": {
+      "$ref": "#/$defs/SampleRef"
+    },
+    "scanned_at": {
+      "description": "RFC 3339 timestamp of the scan.",
+      "type": "string"
+    },
+    "schema_version": {
+      "description": "Schema identifier; always [`SCAN_SCHEMA_VERSION`] when written by\nthis build.",
+      "type": "string"
+    },
+    "verdict": {
+      "$ref": "#/$defs/Verdict"
+    }
+  },
+  "required": [
+    "schema_version",
+    "agat_version",
+    "scanned_at",
+    "sample",
+    "antigen",
+    "recognition",
+    "danger",
+    "verdict"
+  ],
+  "title": "ScanResult",
+  "type": "object"
+}

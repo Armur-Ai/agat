@@ -45,6 +45,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["float_roundtrip"] }
+schemars = "1.2"
 
 sha2 = "0.10"
 md-5 = "0.10"
@@ -81,6 +82,7 @@ axum = "0.8"
 tokio = { version = "1", features = ["rt-multi-thread", "net", "macros", "signal"] }
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
+jsonschema = "0.33"
 
 [profile.release]
 lto = "thin"

@@ -18,6 +18,7 @@
 //! fuses them into a [`Severity`] only as advice. Both axes are always
 //! present in the result so a consumer can apply its own policy.
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// The schema identifier embedded in every [`ScanResult`]. Bump the
@@ -34,7 +35,9 @@ pub const SCAN_SCHEMA_VERSION: &str = "agat.scan/v1";
 ///
 /// Variants are ordered by severity (`Clean < Review < Suspicious <
 /// Malicious`), so `max()` over a batch yields the worst verdict.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum Severity {
     /// Within self / unrecognized, no notable danger — no action.
@@ -82,7 +85,7 @@ impl Severity {
 }
 
 /// Which sample this result is about.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct SampleRef {
     /// Full content id (hex).
     pub id: String,
@@ -94,7 +97,7 @@ pub struct SampleRef {
 }
 
 /// A compact view of the antigen presented to the immune system.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct AntigenSummary {
     /// Dimensionality of the behavioral signature.
     pub dim: usize,
@@ -107,7 +110,7 @@ pub struct AntigenSummary {
 }
 
 /// The recognition axis: is this non-self, and whose family is it?
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct RecognitionSummary {
     /// Whether any detector bound the antigen (non-self).
     pub recognized: bool,
@@ -131,7 +134,7 @@ pub struct RecognitionSummary {
 }
 
 /// One DCA signal contribution.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct SignalSummary {
     /// Signal class: `pamp`, `danger`, or `safe`.
     pub class: String,
@@ -140,7 +143,7 @@ pub struct SignalSummary {
 }
 
 /// The danger axis: DCA-style fusion of real harm signals.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DangerSummary {
     /// Fused danger score in `[0, 1]`.
     pub score: f64,
@@ -157,7 +160,7 @@ pub struct DangerSummary {
 
 /// The fused verdict: agat's one-line recommendation plus the inputs it
 /// was fused from (kept alongside so a consumer never has to re-derive).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Verdict {
     /// The actionable severity.
     pub severity: Severity,
@@ -173,7 +176,7 @@ pub struct Verdict {
 /// Which trained model produced a result: needed to audit or reproduce
 /// a verdict, since the same file can score differently under another
 /// model.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 pub struct ModelRef {
     /// `"pack"` for an imported model pack, `"local"` for a model trained
     /// in this agat home.
@@ -197,7 +200,7 @@ pub struct ModelRef {
 ///
 /// Serialize this to JSON for pipelines; render [`verdict`](Self::verdict)
 /// and the two axes for a human.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ScanResult {
     /// Schema identifier; always [`SCAN_SCHEMA_VERSION`] when written by
     /// this build.
@@ -215,6 +218,13 @@ pub struct ScanResult {
     /// written before this field existed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<ModelRef>,
+}
+
+/// The JSON Schema (draft 2020-12) of [`ScanResult`], i.e. of the
+/// `agat.scan/v1` JSON that `agat scan --json`, `agat serve`, and
+/// SARIF `properties` carry. Published as `docs/schema/agat.scan.v1.json`.
+pub fn scan_result_schema() -> serde_json::Value {
+    serde_json::to_value(schemars::schema_for!(ScanResult)).expect("schema serializes")
 }
 
 impl ScanResult {
@@ -324,6 +334,26 @@ mod tests {
         assert!(Severity::Review.is_actionable());
         assert!(Severity::Suspicious.is_actionable());
         assert!(Severity::Malicious.is_actionable());
+    }
+
+    /// The committed schema must match the types. Regenerate with
+    /// `UPDATE_SCHEMA=1 cargo test -p agat-core schema`.
+    #[test]
+    fn published_schema_matches_the_types() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../docs/schema/agat.scan.v1.json"
+        );
+        let generated = serde_json::to_string_pretty(&scan_result_schema()).unwrap() + "\n";
+        if std::env::var_os("UPDATE_SCHEMA").is_some() {
+            std::fs::create_dir_all(std::path::Path::new(path).parent().unwrap()).unwrap();
+            std::fs::write(path, &generated).unwrap();
+        }
+        let committed = std::fs::read_to_string(path).unwrap_or_default();
+        assert_eq!(
+            committed, generated,
+            "docs/schema/agat.scan.v1.json is stale: rerun with UPDATE_SCHEMA=1"
+        );
     }
 
     #[test]

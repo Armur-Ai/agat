@@ -121,6 +121,10 @@ it is what makes the call reproducible.
 
 ## 5. In JSON and SARIF
 
+The JSON contract is published as a JSON Schema:
+[`docs/schema/agat.scan.v1.json`](schema/agat.scan.v1.json) (also `agat schema`).
+Validate against it in your pipeline, and gate on `schema_version`.
+
 JSON fields mirror the text one-to-one: `verdict.severity`,
 `recognition.{recognized,family,affinity,secondary_response,self_surface_distance}`,
 `danger.{score,context,signals[]}`,

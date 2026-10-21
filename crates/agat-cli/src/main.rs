@@ -176,6 +176,11 @@ enum Cmd {
         #[arg(value_enum)]
         shell: clap_complete::Shell,
     },
+    /// Print the JSON Schema of the agat.scan/v1 result.
+    ///
+    /// The contract behind `scan --json`, `agat serve`, and the SARIF
+    /// `properties`; also published as docs/schema/agat.scan.v1.json.
+    Schema,
     /// Print the agat(1) man page.
     ///
     /// e.g. `agat man > /usr/local/share/man/man1/agat.1`
@@ -318,6 +323,13 @@ fn main() -> Result<()> {
             clap_complete::generate(*shell, &mut cmd, "agat", &mut std::io::stdout());
             return Ok(());
         }
+        Cmd::Schema => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&agat_core::scan_result_schema())?
+            );
+            return Ok(());
+        }
         Cmd::Man => {
             let cmd = <Cli as clap::CommandFactory>::command();
             clap_mangen::Man::new(cmd).render(&mut std::io::stdout())?;
@@ -454,7 +466,9 @@ fn main() -> Result<()> {
             drop(store);
             serve::run(model, listen, allow_remote, max_bytes)
         }
-        Cmd::Completions { .. } | Cmd::Man => unreachable!("handled before opening the store"),
+        Cmd::Completions { .. } | Cmd::Man | Cmd::Schema => {
+            unreachable!("handled before opening the store")
+        }
         Cmd::Tui => agat_tui::run(store).context("running tui"),
     }
 }

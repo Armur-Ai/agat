@@ -24,3 +24,4 @@ zeroize.workspace = true
 rand.workspace = true
 
 chrono.workspace = true
+schemars.workspace = true

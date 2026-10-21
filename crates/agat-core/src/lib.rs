@@ -19,7 +19,7 @@ pub use analyzer::{AnalysisContext, Analyzer, Artifact, FeatureBundle};
 pub use error::{Error, Result};
 pub use sample::{Sample, SampleId, SampleKind, SampleMetadata};
 pub use scan::{
-    AntigenSummary, DangerSummary, ModelRef, RecognitionSummary, SampleRef, ScanResult, Severity,
-    SignalSummary, Verdict, SCAN_SCHEMA_VERSION,
+    scan_result_schema, AntigenSummary, DangerSummary, ModelRef, RecognitionSummary, SampleRef,
+    ScanResult, Severity, SignalSummary, Verdict, SCAN_SCHEMA_VERSION,
 };
 pub use vault::Vault;

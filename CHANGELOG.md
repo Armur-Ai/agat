@@ -24,6 +24,8 @@ The release that turns the research engine into a deployable product.
   `GET /healthz`) with an `X-Agat-Severity` header; loopback-only unless
   `--allow-remote`.
 - `agat completions <shell>`, `agat man`, and a workflow-ordered `--help`.
+- A JSON Schema for `agat.scan/v1` (`docs/schema/agat.scan.v1.json`,
+  `agat schema`), generated from the types and checked in CI.
 - `agat tui` is a verdict console: an Immune tab (severity, recognition and
   danger axes, model provenance), severity-colored sample list with file
   names, and a verdict tally; it no longer asks for the vault password.

@@ -238,6 +238,9 @@ Batch scans run in parallel and stay deterministic: 896 macOS system binaries
 scan in about 2 seconds on an 18-core laptop, with output identical to a
 single-threaded run.
 
+The JSON is a versioned contract with a published JSON Schema
+([`docs/schema/agat.scan.v1.json`](docs/schema/agat.scan.v1.json), or `agat schema`).
+
 Exit codes are the contract: **`0`** clean · **`2`** review/suspicious ·
 **`3`** malicious · **`1`** agat itself failed.
 

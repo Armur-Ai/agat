@@ -488,6 +488,46 @@ mod tests {
         );
     }
 
+    /// Real engine output, including a policy override and pack
+    /// provenance, must validate against the published agat.scan/v1 schema.
+    #[test]
+    fn scan_output_validates_against_the_published_schema() {
+        let schema: serde_json::Value =
+            serde_json::from_str(include_str!("../../../docs/schema/agat.scan.v1.json")).unwrap();
+        let validator = jsonschema::validator_for(&schema).expect("schema compiles");
+
+        let key = generate_signing_key();
+        let file = seal(
+            &build_payload(&trained_store(), "acme", "1", None).unwrap(),
+            Some(&key),
+        )
+        .unwrap();
+        let dst = Store::open_in_memory().unwrap();
+        install(&dst, &verify(&file, &trusting(&key)).unwrap()).unwrap();
+
+        let mut policy = crate::ScanPolicy::default();
+        let bytes = b"\x7fELF some bytes for the analyzers to chew on".to_vec();
+        policy
+            .deny_sha256
+            .insert(agat_core::SampleId::from_bytes(&bytes).to_hex());
+        let model = crate::ImmuneModel::load(&dst).unwrap().with_policy(policy);
+        for name in [Some("upload.bin".to_string()), None] {
+            let result = model.scan_bytes(&bytes, name).unwrap();
+            assert_eq!(result.verdict.policy.as_deref(), Some("denylist"));
+            let json = serde_json::to_value(&result).unwrap();
+            let errors: Vec<String> = validator
+                .iter_errors(&json)
+                .map(|e| e.to_string())
+                .collect();
+            assert!(errors.is_empty(), "schema violations: {errors:?}\n{json:#}");
+
+            // And the schema has teeth: an unknown severity is rejected.
+            let mut bad = json.clone();
+            bad["verdict"]["severity"] = "catastrophic".into();
+            assert!(!validator.is_valid(&bad));
+        }
+    }
+
     #[test]
     fn tampered_payload_is_rejected() {
         let key = generate_signing_key();
