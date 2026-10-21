@@ -1087,11 +1087,12 @@ fn cmd_divergence(store: &Store) -> Result<()> {
             continue;
         }
         any_divergence = true;
+        let st = style::Style::new(style::use_color());
         println!(
-            "\nPolymorphic family {} ({} samples, {} distinct CFG)",
-            &pfp[..pfp.len().min(16)],
-            members.len(),
-            meta_fps.len()
+            "\n{} {} {}",
+            st.bold(&st.fg(style::palette::CYAN, "plaintext family")),
+            st.fg(style::palette::CYAN, &pfp[..pfp.len().min(16)]),
+            st.dim(&format!("({} samples · {} distinct CFG)", members.len(), meta_fps.len())),
         );
         // Determine the "majority" CFG fingerprint — the one most
         // samples in this family share. Divergent samples are those
@@ -1116,11 +1117,9 @@ fn cmd_divergence(store: &Store) -> Result<()> {
                 .ai_score
                 .map(|s| format!("ai {:.2}", s))
                 .unwrap_or_else(|| "ai  -  ".to_string());
-            let prefix = if is_divergent { "  ★" } else { "   " };
-            let suffix = if is_divergent { "  ← divergent" } else { "" };
-            println!(
-                "{}  {}  cfg {:<16}  {}  {}{}",
-                prefix,
+            let line = format!(
+                "{}  {}  cfg {:<16}  {}  {}",
+                if is_divergent { "★" } else { " " },
                 r.sample.sample.id.short(),
                 &cfg[..cfg.len().min(16)],
                 ai,
@@ -1130,8 +1129,12 @@ fn cmd_divergence(store: &Store) -> Result<()> {
                     .original_filename
                     .as_deref()
                     .unwrap_or("-"),
-                suffix,
             );
+            if is_divergent {
+                println!("{}  {}", st.fg(style::palette::RED, &line), st.fg(style::palette::RED, "← divergent"));
+            } else {
+                println!("  {}", st.dim(&line));
+            }
         }
         println!(
             "\n  Algorithm substitution within a single plaintext family is the\n  \
@@ -1218,23 +1221,23 @@ fn cmd_cluster(store: &Store) -> Result<()> {
     let mut sorted: Vec<(String, Vec<StoredSample>)> = clusters.into_iter().collect();
     sorted.sort_by_key(|c| std::cmp::Reverse(c.1.len()));
 
+    let st = style::Style::new(style::use_color());
     for (fp, members) in &sorted {
-        let label = if members.len() == 1 {
-            "singleton"
+        let fp16 = &fp[..fp.len().min(16)];
+        if members.len() == 1 {
+            println!("\n{} {}", st.dim("singleton"), st.dim(fp16));
         } else {
-            "family"
-        };
-        println!(
-            "\n{} {} ({} member{})",
-            label,
-            &fp[..fp.len().min(16)],
-            members.len(),
-            if members.len() == 1 { "" } else { "s" }
-        );
+            println!(
+                "\n{} {} {}",
+                st.bold(&st.fg(style::palette::VIOLET, "family")),
+                st.fg(style::palette::VIOLET, fp16),
+                st.dim(&format!("({} members)", members.len())),
+            );
+        }
         for s in members {
             println!(
                 "  {}  {}",
-                s.sample.id.short(),
+                st.fg(style::palette::YELLOW, &s.sample.id.short()),
                 s.sample
                     .metadata
                     .original_filename
