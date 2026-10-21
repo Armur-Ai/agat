@@ -33,3 +33,5 @@ clap.workspace = true
 rpassword.workspace = true
 dirs.workspace = true
 toml.workspace = true
+clap_complete.workspace = true
+clap_mangen.workspace = true

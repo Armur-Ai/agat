@@ -122,6 +122,15 @@ enum Cmd {
         #[command(subcommand)]
         cmd: KeyCmd,
     },
+    /// Print a shell completion script, e.g.
+    /// `agat completions zsh > "${fpath[1]}/_agat"`.
+    Completions {
+        #[arg(value_enum)]
+        shell: clap_complete::Shell,
+    },
+    /// Print the agat(1) man page (roff), e.g.
+    /// `agat man > /usr/local/share/man/man1/agat.1`.
+    Man,
     /// Launch the interactive TUI.
     Tui,
 }
@@ -255,6 +264,21 @@ fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
+    // Self-describing commands need no agat home, config, or store.
+    match &cli.command {
+        Cmd::Completions { shell } => {
+            let mut cmd = <Cli as clap::CommandFactory>::command();
+            clap_complete::generate(*shell, &mut cmd, "agat", &mut std::io::stdout());
+            return Ok(());
+        }
+        Cmd::Man => {
+            let cmd = <Cli as clap::CommandFactory>::command();
+            clap_mangen::Man::new(cmd).render(&mut std::io::stdout())?;
+            return Ok(());
+        }
+        _ => {}
+    }
+
     let agat_home = resolve_home(cli.home.as_deref())?;
     std::fs::create_dir_all(&agat_home)
         .with_context(|| format!("creating agat home at {}", agat_home.display()))?;
@@ -370,6 +394,7 @@ fn main() -> Result<()> {
             drop(store);
             std::process::exit(fail_on.exit_code(worst));
         }
+        Cmd::Completions { .. } | Cmd::Man => unreachable!("handled before opening the store"),
         Cmd::Tui => agat_tui::run(vault.expect("tui needs a vault"), store).context("running tui"),
     }
 }
