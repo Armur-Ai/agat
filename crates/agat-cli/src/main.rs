@@ -16,11 +16,26 @@ use clap::{Parser, Subcommand};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
+const AFTER_HELP: &str = "\
+Quick start:
+  agat ingest ./benign/* ./family/*      # once, with AGAT_VAULT_PASSWORD set
+  agat analyze
+  agat self build <benign-ids…>
+  agat repertoire generate --seed 1
+  agat mature <id> --family <name>
+  agat scan ./suspects --output table    # stateless: no password, nothing written
+
+Exit codes (scan, recognize):
+  0 clean · 2 review/suspicious · 3 malicious · 1 agat error
+
+Reading a result: docs/READING_OUTPUT.md · https://github.com/Armur-Ai/agat";
+
 #[derive(Parser)]
 #[command(
     name = "agat",
     version,
-    about = "Polymorphic, metamorphic, and AI-rewritten malware analysis"
+    about = "An adaptive immune system for binaries: catches polymorphic, metamorphic, and AI-rewritten malware variants, offline.",
+    after_help = AFTER_HELP
 )]
 struct Cli {
     /// Override the agat data directory (defaults to ~/.agat or $AGAT_HOME).
@@ -35,16 +50,42 @@ struct Cli {
     command: Cmd,
 }
 
+// Variant order is the order `agat --help` lists commands: scanning first,
+// then training, model packs, the sample library, and tooling.
 #[derive(Subcommand)]
 enum Cmd {
-    /// Ingest one or more files into the encrypted vault.
+    /// Scan files or directories: analyze and recognize in one shot.
+    ///
+    /// Stateless by default: files are analyzed in memory and nothing is
+    /// written, so no vault password is needed. Requires a trained model
+    /// (`self build` + `repertoire generate`, or `repertoire import`).
+    Scan {
+        /// Files, or directories to scan recursively.
+        #[arg(required = true)]
+        paths: Vec<PathBuf>,
+        /// Also ingest each file into the encrypted vault sample library
+        /// (and persist its features), as `agat ingest` + `analyze` would.
+        #[arg(long)]
+        ingest: bool,
+        #[command(flatten)]
+        out: OutputArgs,
+    },
+    /// Recognize a sample already in the library.
+    ///
+    /// Reports the antigen, the matched detector and family, affinity, and
+    /// danger, exactly as `scan` does for a file on disk.
+    Recognize {
+        /// Sample id (full SHA-256 or unique prefix).
+        id: String,
+        #[command(flatten)]
+        out: OutputArgs,
+    },
+    /// Add files to the encrypted sample library (training input).
     Ingest {
         #[arg(required = true)]
         paths: Vec<PathBuf>,
     },
-    /// List samples currently in the store.
-    List,
-    /// Run all analyzers on one sample or every sample.
+    /// Run the analyzers on one library sample, or all of them.
     Analyze {
         /// Sample id (full SHA-256 or unique prefix). Omit for all samples.
         id: Option<String>,
@@ -52,7 +93,33 @@ enum Cmd {
         #[arg(long)]
         force: bool,
     },
-    /// Show analyzer results for a sample.
+    /// Model benign "self" from your software (negative selection's input).
+    #[command(name = "self")]
+    SelfNs {
+        #[command(subcommand)]
+        cmd: SelfCmd,
+    },
+    /// The detector repertoire: generate it, or export/import it as a signed pack.
+    Repertoire {
+        #[command(subcommand)]
+        cmd: RepertoireCmd,
+    },
+    /// Teach a family from a confirmed variant (clonal selection).
+    Mature {
+        /// Sample id (full SHA-256 or unique prefix).
+        id: String,
+        /// Family label to attach to the matured memory cell.
+        #[arg(long)]
+        family: String,
+    },
+    /// Signing keys for model packs.
+    Key {
+        #[command(subcommand)]
+        cmd: KeyCmd,
+    },
+    /// List samples in the library.
+    List,
+    /// Show one sample's analyzer results in detail.
     Show {
         /// Sample id (full SHA-256 or unique prefix).
         id: String,
@@ -69,70 +136,27 @@ enum Cmd {
         #[arg(long)]
         ai: bool,
     },
-    /// Group samples by metamorphic CFG fingerprint.
+    /// Group library samples by metamorphic CFG fingerprint.
     Cluster,
-    /// Cross-sample divergence analysis: flag samples that share a
-    /// recovered-plaintext family but have a different CFG fingerprint
-    /// from the rest of the family. This is the algorithm-substitution
-    /// signature of LLM rewriting.
+    /// Flag LLM-style rewrites: same payload, different control flow.
+    ///
+    /// Groups library samples by recovered-plaintext fingerprint and flags
+    /// those whose CFG fingerprint differs from the rest of their family.
+    /// That algorithm substitution is the signature of LLM rewriting.
     Divergence,
-    /// Artificial Immune System: model benign "self" from a corpus.
-    #[command(name = "self")]
-    SelfNs {
-        #[command(subcommand)]
-        cmd: SelfCmd,
-    },
-    /// Artificial Immune System: the negative-selection detector repertoire.
-    Repertoire {
-        #[command(subcommand)]
-        cmd: RepertoireCmd,
-    },
-    /// Mature the repertoire onto a confirmed family variant (clonal selection).
-    Mature {
-        /// Sample id (full SHA-256 or unique prefix).
-        id: String,
-        /// Family label to attach to the matured memory cell.
-        #[arg(long)]
-        family: String,
-    },
-    /// Recognize a sample: antigen, matched detector/family, affinity, danger.
-    Recognize {
-        /// Sample id (full SHA-256 or unique prefix).
-        id: String,
-        #[command(flatten)]
-        out: OutputArgs,
-    },
-    /// Scan files or directories end to end: analyze and recognize in one
-    /// shot. Stateless by default — files are analyzed in memory and
-    /// nothing is written, so no vault password is needed. Requires a
-    /// trained model (`self build` + `repertoire generate`).
-    Scan {
-        /// Files, or directories to scan recursively.
-        #[arg(required = true)]
-        paths: Vec<PathBuf>,
-        /// Also ingest each file into the encrypted vault sample library
-        /// (and persist its features), as `agat ingest` + `analyze` would.
-        #[arg(long)]
-        ingest: bool,
-        #[command(flatten)]
-        out: OutputArgs,
-    },
-    /// Signing keys for model packs.
-    Key {
-        #[command(subcommand)]
-        cmd: KeyCmd,
-    },
-    /// Print a shell completion script, e.g.
-    /// `agat completions zsh > "${fpath[1]}/_agat"`.
+    /// Launch the interactive TUI.
+    Tui,
+    /// Print a shell completion script.
+    ///
+    /// e.g. `agat completions zsh > "${fpath[1]}/_agat"`
     Completions {
         #[arg(value_enum)]
         shell: clap_complete::Shell,
     },
-    /// Print the agat(1) man page (roff), e.g.
-    /// `agat man > /usr/local/share/man/man1/agat.1`.
+    /// Print the agat(1) man page.
+    ///
+    /// e.g. `agat man > /usr/local/share/man/man1/agat.1`
     Man,
-    /// Launch the interactive TUI.
-    Tui,
 }
 
 #[derive(Subcommand)]
