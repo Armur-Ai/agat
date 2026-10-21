@@ -544,6 +544,63 @@ mod tests {
         assert_eq!(back.recognition.family.as_deref(), Some("emotet"));
     }
 
+    /// The whole analyzer pipeline must never panic, and must always
+    /// produce every analyzer's features, on hostile and malformed input.
+    /// Parser crashes on untrusted files are security bugs (SECURITY.md).
+    #[test]
+    fn analyze_bytes_never_panics_on_adversarial_input() {
+        // A deterministic xorshift generator so the corpus is reproducible.
+        let mut state = 0x1234_5678_9abc_def0u64;
+        let mut rng = || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+
+        let mut corpus: Vec<Vec<u8>> = vec![
+            vec![],
+            vec![0],
+            b"\x7fELF".to_vec(),
+            b"MZ".to_vec(),
+            b"\xca\xfe\xba\xbe".to_vec(),   // fat Mach-O magic, nothing after
+            b"\xcf\xfa\xed\xfe".to_vec(),   // thin Mach-O magic, nothing after
+            vec![0xff; 64],
+        ];
+        // Structured-but-lying headers: the real parser crash vectors.
+        // An ELF/PE/Mach-O magic followed by random bytes claiming large
+        // sizes, offsets and counts.
+        for magic in [
+            &b"\x7fELF\x02\x01\x01\x00"[..],
+            &b"\x7fELF\x01\x01\x01\x00"[..],
+            &b"MZ"[..],
+            &b"\xcf\xfa\xed\xfe"[..],
+            &b"\xca\xfe\xba\xbe\x00\x00\x00\x03"[..],
+        ] {
+            for _ in 0..40 {
+                let mut buf = magic.to_vec();
+                let len = (rng() % 4096) as usize;
+                buf.extend((0..len).map(|_| (rng() >> 24) as u8));
+                corpus.push(buf);
+            }
+        }
+        // Pure noise and repetitive patterns of assorted sizes.
+        for size in [1usize, 15, 63, 64, 65, 256, 1021, 4096, 65537] {
+            corpus.push((0..size).map(|_| (rng() >> 32) as u8).collect());
+            corpus.push(vec![0x90; size]);
+            corpus.push((0..size).map(|i| (i % 256) as u8).collect());
+        }
+
+        for (i, bytes) in corpus.iter().enumerate() {
+            let (sample, map) = analyze_bytes(bytes, Some(format!("fuzz-{i}")))
+                .unwrap_or_else(|e| panic!("analyze_bytes errored on input {i}: {e:#}"));
+            assert_eq!(sample.id, SampleId::from_bytes(bytes));
+            for name in ["static", "disasm", "poly", "meta", "ai"] {
+                assert!(map.contains_key(name), "input {i}: missing {name} features");
+            }
+        }
+    }
+
     #[test]
     fn analyze_bytes_runs_every_analyzer_in_memory() {
         let bytes = b"\x7fELF not really an elf, just some bytes to analyze".to_vec();
