@@ -1309,6 +1309,12 @@ fn cmd_cluster(store: &Store) -> Result<()> {
     Ok(())
 }
 
+/// A cyan-bold analyzer section header for `agat show`.
+fn section_title(title: &str) {
+    let st = style::Style::new(style::use_color());
+    println!("\n{}", st.bold(&st.fg(style::palette::CYAN, title)));
+}
+
 fn print_static_features(f: &StaticFeatures) {
     println!();
     println!(
@@ -1414,7 +1420,7 @@ fn print_static_features(f: &StaticFeatures) {
 }
 
 fn print_disasm_features(df: &DisasmFeatures) {
-    println!("\ndisassembly");
+    section_title("disassembly");
     if df.bitness == 0 {
         println!(
             "  (architecture {} not supported by Phase 2 disasm; need x86/x64)",
@@ -1475,7 +1481,7 @@ fn print_disasm_features(df: &DisasmFeatures) {
 }
 
 fn print_poly_features(p: &PolyFeatures) {
-    println!("\npolymorphic-engine analysis");
+    section_title("polymorphic-engine analysis");
     println!("  confidence  {:.2}", p.confidence);
     let verdict = if p.is_polymorphic() {
         "LIKELY POLYMORPHIC"
@@ -1585,7 +1591,7 @@ fn print_poly_features(p: &PolyFeatures) {
 }
 
 fn print_ai_features(a: &AiFeatures) {
-    println!("\nAI-signal analysis");
+    section_title("AI-signal analysis");
     println!("  combined score   {:.2}", a.combined_score);
     let verdict = if a.is_ai_rewritten() {
         "LIKELY AI-REWRITTEN"
@@ -1644,7 +1650,7 @@ fn print_ai_features(a: &AiFeatures) {
 }
 
 fn print_meta_features(m: &MetaFeatures, store: &Store, this_id: &SampleId) -> Result<()> {
-    println!("\nmetamorphic analysis");
+    section_title("metamorphic analysis");
     if !m.has_fingerprint() {
         println!("  (no CFG fingerprint — non-x86 or no disassembly)");
         return Ok(());
