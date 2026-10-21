@@ -1,0 +1,30 @@
+name: Bug report
+description: agat crashed, errored, or behaved incorrectly (not a detection-quality issue).
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: Include the exact command and its full output.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: If it needs a specific file, prefer a synthetic one (see tools/*_gen.py). Never attach malware.
+  - type: input
+    id: version
+    attributes:
+      label: agat version and platform
+      placeholder: "agat 0.1.0 · Ubuntu 24.04 x86_64 · container / binary / source"
+    validations:
+      required: true

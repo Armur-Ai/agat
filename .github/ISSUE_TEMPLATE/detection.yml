@@ -1,0 +1,54 @@
+name: False positive / missed detection
+description: agat flagged something benign, or missed a variant it should catch.
+labels: ["detection"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Never attach malware or a binary you are not allowed to share.**
+        The ScanResult JSON and the sample's SHA-256 are usually enough to
+        reason about a verdict; we will ask if we need more.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What happened?
+      options:
+        - False positive (benign file flagged)
+        - Missed detection (known-family variant not recognized)
+        - Wrong family attribution
+        - Severity seems wrong for the evidence
+    validations:
+      required: true
+  - type: input
+    id: sha256
+    attributes:
+      label: Sample SHA-256
+      description: And, if public, where it can be obtained (e.g. a MalwareBazaar link).
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: ScanResult JSON
+      description: Output of `agat scan <file> --json`.
+      render: json
+    validations:
+      required: true
+  - type: textarea
+    id: training
+    attributes:
+      label: How was the model trained?
+      description: Roughly what the self-model was built from (counts and kinds of software), and which families were matured on how many variants.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect, and why?
+  - type: input
+    id: version
+    attributes:
+      label: agat version
+      description: Output of `agat --version`.
+    validations:
+      required: true
