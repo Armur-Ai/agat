@@ -9,6 +9,7 @@ with `python3` and the agat workspace.
 | `generalize.sh` | the single headline moment: one never-seen variant recognized as its family |
 | `sweep.sh` | the affinity weights aren't a hand-tuned knife edge: detection/FP under 32 perturbed weightings |
 | `keys.sh` | register-held and multi-byte decryptor keys are recovered *exactly*, and never "recovered" from benign data |
+| `substitute.sh` | variants that swap instructions for equivalents collapse to one fingerprint and are recognized unseen |
 | `fetch-benign.sh` | builds the real benign corpus `run.sh` and `sweep.sh` measure FPs on |
 
 ## `run.sh` — detection and false-positive rates
@@ -161,6 +162,27 @@ by turning zero-filled tables into "text" made of spaces, then small-integer
 tables into letter-range gibberish. The fixes (word-like text only, and
 declining windows over 5% zero bytes, since true ciphertext measured ≤1.8%)
 are documented in `crates/agat-poly/src/solve.rs`.
+
+## `substitute.sh` — recognition across instruction substitution
+
+Metamorphic engines swap instructions for equivalents: `inc rsi` ↔
+`add rsi,1` ↔ `lea rsi,[rsi+1]`, `xor eax,eax` ↔ `mov eax,0`,
+`mov rsi,imm` ↔ `push imm; pop rsi`. `tools/meta_gen.py --substitute`
+builds all 54 combinations of one decryptor; the benchmark checks they
+share one canonical CFG fingerprint, trains the family on 6 of them, and
+scans the other 48 statelessly.
+
+```
+================ instruction substitution ================
+  variants                      54
+  distinct CFG fingerprints     1   (must be 1)
+  trained on                    6
+  held-out recognized + family  48/48
+  affinity                      min 0.347 · median 0.544
+```
+
+Before the canonical form learned these folds (`agat-meta` 0.2.0), the
+same 54 variants produced 54 different fingerprints.
 
 ## `generalize.sh` — recognition of unseen variants
 
