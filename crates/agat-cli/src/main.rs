@@ -643,20 +643,38 @@ fn cmd_scan(
         // parallel, keeping results in file order.
         None => {
             use rayon::prelude::*;
+            use std::io::IsTerminal;
+            use std::sync::atomic::{AtomicUsize, Ordering};
             let pool = rayon::ThreadPoolBuilder::new()
                 .num_threads(jobs)
                 .build()
                 .context("starting the scan thread pool")?;
-            pool.install(|| {
+            // A live progress line on stderr for larger batches, only when
+            // stderr is a terminal (stdout stays clean for JSON/SARIF).
+            let total = files.len();
+            let show_progress = total >= 16 && std::io::stderr().is_terminal();
+            let done = AtomicUsize::new(0);
+            let out = pool.install(|| {
                 files
                     .par_iter()
                     .map(|file| {
                         let bytes = std::fs::read(file)
                             .with_context(|| format!("reading {}", file.display()))?;
-                        model.scan_bytes(&bytes, file.to_str().map(String::from))
+                        let r = model.scan_bytes(&bytes, file.to_str().map(String::from));
+                        if show_progress {
+                            let n = done.fetch_add(1, Ordering::Relaxed) + 1;
+                            if n % 8 == 0 || n == total {
+                                eprint!("\r\x1b[2K  scanning {n}/{total}…");
+                            }
+                        }
+                        r
                     })
                     .collect::<Result<Vec<_>>>()
-            })?
+            });
+            if show_progress {
+                eprint!("\r\x1b[2K");
+            }
+            out?
         }
     };
     // The table prints its own tally; elsewhere note batch size on stderr.
