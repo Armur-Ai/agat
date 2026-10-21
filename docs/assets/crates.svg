@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="620" viewBox="0 0 1000 620" role="img" aria-label="the agat workspace crate graph, from agat-core up through the analyzers, antigen, immune core, engine, and the CLI/TUI front ends">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#03050b"/><stop offset="1" stop-color="#0c0a1d"/></linearGradient>
+    <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1" fill="#5ef2ff" fill-opacity="0.06"/></pattern>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#5a6b8c"/></marker>
+    <style>
+      .n   { font:700 12.5px ui-monospace,Menlo,monospace; fill:#e8efff; }
+      .d   { font:10px ui-monospace,Menlo,monospace; fill:#8a9bc4; }
+      .lay { font:700 10px ui-monospace,Menlo,monospace; letter-spacing:2px; fill:#5a6b8c; }
+      .e   { stroke:#3a4a6a; stroke-width:1; fill:none; marker-end:url(#a); opacity:.55; }
+    </style>
+  </defs>
+  <rect width="1000" height="620" fill="url(#bg)"/><rect width="1000" height="620" fill="url(#dots)"/>
+  <text x="500" y="40" text-anchor="middle" class="n" font-size="15">The workspace, bottom-up</text>
+
+  <!-- layer labels -->
+  <text x="30" y="92" class="lay">FOUNDATION</text>
+  <text x="30" y="200" class="lay">ANALYZERS</text>
+  <text x="30" y="330" class="lay">IMMUNE</text>
+  <text x="30" y="438" class="lay">ENGINE</text>
+  <text x="30" y="548" class="lay">FRONT ENDS</text>
+
+  <!-- edges first (behind nodes) -->
+  <g class="e">
+    <!-- store/static → core -->
+    <path d="M300 92 C300 80 430 80 430 82"/>
+    <!-- analyzers → core/static/disasm (approx lines to foundation/analyzer layer) -->
+    <path d="M250 180 V110"/>
+    <path d="M400 180 V110"/>
+    <path d="M550 180 V110"/>
+    <path d="M700 180 V110"/>
+    <!-- antigen → analyzers -->
+    <path d="M420 300 V214"/>
+    <path d="M470 300 V214"/>
+    <path d="M520 300 V214"/>
+    <!-- immune → antigen -->
+    <path d="M300 300 C300 280 410 280 410 302"/>
+    <!-- engine → immune+antigen -->
+    <path d="M450 412 V334"/>
+    <path d="M300 412 C300 390 440 390 440 414"/>
+    <!-- front ends → engine -->
+    <path d="M360 520 V448"/>
+    <path d="M640 520 V448"/>
+  </g>
+
+  <!-- foundation -->
+  <g>
+    <rect x="430" y="76" width="130" height="34" rx="7" fill="#071a16" stroke="#2bd99a" stroke-opacity=".7"/><text x="445" y="98" class="n">agat-core</text>
+    <rect x="250" y="76" width="130" height="34" rx="7" fill="#0b1226" stroke="#5ef2ff" stroke-opacity=".5"/><text x="265" y="98" class="n">agat-store</text>
+  </g>
+  <!-- analyzers -->
+  <g>
+    <rect x="186" y="180" width="128" height="34" rx="7" fill="#0b1226" stroke="#5ef2ff" stroke-opacity=".5"/><text x="200" y="202" class="n">agat-static</text>
+    <rect x="336" y="180" width="128" height="34" rx="7" fill="#0b1226" stroke="#5ef2ff" stroke-opacity=".5"/><text x="350" y="202" class="n">agat-disasm</text>
+    <rect x="486" y="180" width="110" height="34" rx="7" fill="#0b1226" stroke="#5ef2ff" stroke-opacity=".5"/><text x="500" y="202" class="n">agat-poly</text>
+    <rect x="618" y="180" width="110" height="34" rx="7" fill="#0b1226" stroke="#5ef2ff" stroke-opacity=".5"/><text x="632" y="202" class="n">agat-meta</text>
+    <rect x="750" y="180" width="96" height="34" rx="7" fill="#0b1226" stroke="#5ef2ff" stroke-opacity=".5"/><text x="764" y="202" class="n">agat-ai</text>
+  </g>
+  <!-- immune -->
+  <g>
+    <rect x="386" y="300" width="150" height="34" rx="7" fill="#101b30" stroke="#8fa8ff" stroke-opacity=".6"/><text x="400" y="322" class="n">agat-antigen</text>
+    <rect x="240" y="300" width="130" height="34" rx="7" fill="#160b24" stroke="#ff4fd8" stroke-opacity=".6"/><text x="254" y="322" class="n">agat-immune</text>
+  </g>
+  <!-- engine -->
+  <rect x="386" y="412" width="150" height="36" rx="7" fill="#120d26" stroke="url(#sig)" stroke-width="1.4"/>
+  <linearGradient id="sig" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#5ef2ff"/><stop offset="1" stop-color="#d07bff"/></linearGradient>
+  <text x="400" y="435" class="n">agat-engine</text>
+  <text x="400" y="408" class="d" fill="#8a9bc4">the scan facade: one ScanResult</text>
+  <!-- front ends -->
+  <g>
+    <rect x="296" y="520" width="130" height="36" rx="7" fill="#0b1226" stroke="#5ef2ff" stroke-opacity=".6"/><text x="312" y="543" class="n">agat-cli</text>
+    <rect x="576" y="520" width="130" height="36" rx="7" fill="#0b1226" stroke="#5ef2ff" stroke-opacity=".6"/><text x="592" y="543" class="n">agat-tui</text>
+  </g>
+
+  <text x="730" y="440" class="d">arrows point to a crate's dependencies</text>
+</svg>

@@ -66,6 +66,8 @@ policy can act on either raw axis from the same `ScanResult`.
 
 ## Crates
 
+![crate graph](assets/crates.svg)
+
 | crate           | role |
 |-----------------|------|
 | `agat-core`     | shared vocabulary: `Sample`/`SampleId`, the encrypted `Vault`, and the `ScanResult` verdict contract |
