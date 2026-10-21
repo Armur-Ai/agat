@@ -132,6 +132,20 @@ over real behavioral data. It is not a biological simulation.
   property to be proven by packaging (a `--network none` container run),
   not merely asserted.
 
+## Model packs
+
+A trained model (self-model, repertoire, memory pool) is portable as an
+`agat.pack/v1` file (`agat-engine::pack`): the payload is kept as exact
+JSON text with its SHA-256, optionally signed with Ed25519 over
+`"agat.pack/v1:<sha256>"`, and stamped with the antigen metric's
+fingerprint (`AntigenConfig::fingerprint`, which covers
+`ANTIGEN_LAYOUT_VERSION`, the group weights, and the dimension labels).
+Import (`verify` + `install`) checks integrity, signature against
+operator-trusted keys only, and metric-space compatibility, then records
+the pack's provenance in the store. `ImmuneModel::load` reads that
+provenance, so every `ScanResult.model` names the pack (or "local") that
+produced it. Retraining locally clears the provenance.
+
 ## Verdict contract
 
 `ScanResult` (in `agat-core`) is the stable, serializable answer: both

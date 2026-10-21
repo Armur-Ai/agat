@@ -106,19 +106,34 @@ NOPs share it. The **plaintext fingerprint** is the hash of a payload agat
 decrypted itself, so two samples sharing it carry the same hidden payload
 under different encryption.
 
-## 4. In JSON and SARIF
+## 4. Model: which model made this call
+
+```
+model  pack acme-threats v2026.10 · signed by ec73e23d226e8fdc
+```
+
+The same file can score differently under a different model, so every
+result names its own. `pack …` means an imported, verified model pack
+(name, version, and the trusted signer's key id; JSON adds the pack's
+`sha256` and the `antigen_fingerprint`). `trained locally` means the model
+was built in this agat home. Keep it with the verdict when you file a case:
+it is what makes the call reproducible.
+
+## 5. In JSON and SARIF
 
 JSON fields mirror the text one-to-one: `verdict.severity`,
 `recognition.{recognized,family,affinity,secondary_response,self_surface_distance}`,
-`danger.{score,context,signals[]}`. Optional fields are **omitted** when
+`danger.{score,context,signals[]}`,
+`model.{source,name,version,sha256,signer,antigen_fingerprint}`. Optional fields are **omitted** when
 empty (no `family` key means no family). A batch is an array.
 
 SARIF emits one result per non-clean file. `ruleId` is
 `agat/non-self-dangerous` (error), `agat/suspicious` or `agat/review`
 (warning). The file path is the location, the sample sha256 is the
-`partialFingerprints.agatSampleId`, and the axes are in `properties`.
+`partialFingerprints.agatSampleId`, and the axes and the model are in
+`properties`.
 
-## 5. What agat cannot tell you
+## 6. What agat cannot tell you
 
 - **Coverage**: x86/x64 PE/ELF only. Other architectures get static
   analysis but no structural (CFG) comparison, so recognition is weaker.
