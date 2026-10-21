@@ -766,6 +766,23 @@ fn severity_color(sev: Severity) -> Color {
 
 /// The immune verdict for the selected sample: the fused severity, then
 /// the two independent axes and the model that produced them.
+/// A key/value line whose value is a numeric meter: the value, then a
+/// colored 0..1 bar.
+fn meter_line(key: &'static str, value: f64, color: Color) -> Line<'static> {
+    let v = value.clamp(0.0, 1.0);
+    let filled = (v * 16.0).round() as usize;
+    let bar = format!(
+        "{}{}",
+        "\u{2588}".repeat(filled),
+        "\u{2591}".repeat(16 - filled)
+    );
+    Line::from(vec![
+        Span::styled(format!("{key:<16}"), Style::default().fg(Color::Gray)),
+        Span::raw(format!("{value:.3}  ")),
+        Span::styled(bar, Style::default().fg(color)),
+    ])
+}
+
 fn build_immune(app: &App) -> Vec<Line<'static>> {
     let dim = Style::default().fg(Color::DarkGray);
     if !app.has_model {
@@ -818,7 +835,7 @@ fn build_immune(app: &App) -> Vec<Line<'static>> {
         "family",
         rec.family.clone().unwrap_or_else(|| "-".into()),
     ));
-    lines.push(kv("affinity", format!("{:.3}", rec.affinity)));
+    lines.push(meter_line("affinity", rec.affinity, Color::Magenta));
     lines.push(kv(
         "memory",
         if rec.secondary_response {
@@ -834,11 +851,12 @@ fn build_immune(app: &App) -> Vec<Line<'static>> {
 
     let d = &r.danger;
     lines.push(section_header("danger: is it harmful?"));
+    lines.push(meter_line("score", d.score, Color::Red));
     lines.push(kv(
-        "score",
+        "context",
         format!(
-            "{:.3}  ({})  P {:.2} / D {:.2} / S {:.2}",
-            d.score, d.context, d.pamp, d.danger, d.safe
+            "{}  ·  P {:.2} / D {:.2} / S {:.2}",
+            d.context, d.pamp, d.danger, d.safe
         ),
     ));
     for sig in d.signals.iter().take(8) {
