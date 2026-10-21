@@ -159,7 +159,7 @@ offline.
 |---|---|---|
 | recognizes variants it has **never seen** | `bench/run.sh`: train on 8 metamorphic variants, test 8 held-out ones | **8 / 8 detected**, all attributed to the family |
 | doesn't flag normal software | same run: **110 held-out real Debian x86-64 binaries** | **0 / 110 false positives** |
-| …on macOS too | same run: **448 held-out macOS system binaries** (Mach-O, x86-64 slice) | **0 / 448 malicious**, 1.6% review |
+| …on macOS too | same run: **448 held-out macOS system binaries** (Mach-O, x86-64 slice) | **0 / 448 malicious** (1.6% non-clean) |
 | a single held-out sibling, end to end | `bench/generalize.sh` | recognized, affinity **0.92**, via memory cell |
 | not a hand-tuned knife edge | `bench/sweep.sh`: retrain under 32 perturbed weightings (each weight ×0.5–×2) | detection **100%** and FPs **0%** in every one |
 | truly air-gapped | `demo/run.sh --compare` under `docker run --network none` | **byte-identical** transcript |

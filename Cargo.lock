@@ -89,6 +89,7 @@ dependencies = [
  "clap_complete",
  "clap_mangen",
  "dirs",
+ "hex",
  "http-body-util",
  "rpassword",
  "serde",
