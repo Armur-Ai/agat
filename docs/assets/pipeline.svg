@@ -107,6 +107,6 @@
   <path d="M606 236 H622" class="flow" stroke-dasharray="4 4"/>
 
   <text x="990" y="470" class="k">NO NETWORK. EVER.</text>
-  <text x="990" y="496" class="t">one static binary · 10 MB image</text>
+  <text x="990" y="496" class="t">one static binary · ~12 MB image</text>
   <text x="990" y="514" class="t">runs under --network none</text>
 </svg>

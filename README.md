@@ -13,7 +13,7 @@
   <img alt="Rust" src="https://img.shields.io/badge/built%20with-Rust-d07bff?style=flat-square&labelColor=0b1226">
   <img alt="Air-gapped" src="https://img.shields.io/badge/network-none-2bd99a?style=flat-square&labelColor=0b1226">
   <img alt="SARIF 2.1.0" src="https://img.shields.io/badge/output-SARIF%202.1.0-8fa8ff?style=flat-square&labelColor=0b1226">
-  <img alt="Image size" src="https://img.shields.io/badge/container-~10%20MB-ff4fd8?style=flat-square&labelColor=0b1226">
+  <img alt="Image size" src="https://img.shields.io/badge/container-~12%20MB-ff4fd8?style=flat-square&labelColor=0b1226">
   <img alt="Signed model packs" src="https://img.shields.io/badge/models-Ed25519%20signed-ffc857?style=flat-square&labelColor=0b1226">
 </p>
 
@@ -180,7 +180,7 @@ We publish the weaknesses the benchmarks found, too.
 no model to fetch. It works in a SCIF, on an OT network, or on a laptop on a plane.
 
 ```bash
-# container (~10 MB, scratch base)
+# container (~12 MB, scratch base)
 docker run --rm --network none \
   -v "$HOME/.agat:/data" -v "$PWD:/scan:ro" agat scan /scan --output table
 
@@ -318,7 +318,7 @@ Defenders deserve exact limits, so here they are:
 - [x] Immune core: self model, negative selection, clonal memory, danger theory
 - [x] Operator CLI: stateless scan, table / JSON / SARIF, exit codes, config, allow/deny lists
 - [x] Evidence: generalization, detection/FP rates on real binaries, weight sweep
-- [x] Packaging: ~10 MB container, air-gap proof, deterministic demo
+- [x] Packaging: ~12 MB container, air-gap proof, deterministic demo
 - [x] Signed model packs: train once, verify and deploy to air-gapped fleets
 - [x] `agat serve`: local HTTP endpoint for SOAR / pipeline integration
 - [x] Key-less recovery of register-held and multi-byte repeating keys
