@@ -279,6 +279,10 @@ with `/`, scroll with `PgUp`/`PgDn`, and press `?` for every key.
 
 ### Plug it into SOAR, mail gateways, and pipelines (`agat serve`)
 
+<p align="center">
+  <img src="docs/assets/serve.gif" alt="agat serve: healthz with model provenance, POST /v1/scan returning a verdict with an X-Agat-Severity header" width="88%">
+</p>
+
 ```bash
 agat serve                                   # http://127.0.0.1:8080, model loaded once
 curl --data-binary @invoice.exe 'localhost:8080/v1/scan?name=invoice.exe'   # → ScanResult JSON

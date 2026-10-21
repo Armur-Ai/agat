@@ -138,6 +138,8 @@ A suggested field mapping: `agat.verdict.severity` (keyword),
 
 ## SOAR / playbooks (HTTP)
 
+![the agat serve HTTP API](assets/serve.gif)
+
 Run the local API and submit files from a playbook. Every verdict is a `200`
 with the severity in the `X-Agat-Severity` header, so a playbook can branch
 without parsing JSON.
