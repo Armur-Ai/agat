@@ -4,7 +4,6 @@ DESIGN.md
 # Rust build artifacts
 target/
 **/*.rs.bk
-Cargo.lock
 
 # Sample vault — never commit malware samples
 samples/
@@ -51,3 +50,4 @@ build/
 
 # Benchmark corpora (real binaries; regenerate with bench/fetch-benign.sh)
 bench/corpus/
+demo/.work/

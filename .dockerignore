@@ -1,0 +1,5 @@
+target/
+bench/corpus/
+.git/
+.claude/
+*.bin

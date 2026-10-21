@@ -162,6 +162,29 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full pipeline diagram
 
 ---
 
+## Install
+
+agat is one static binary with no runtime dependencies and no model
+download. It makes no network calls.
+
+```bash
+# Container (~10 MB, `scratch` base). Mount your agat home and the files to scan.
+docker build -t agat .
+docker run --rm --network none -v "$HOME/.agat:/data" -v "$PWD:/scan:ro" agat scan /scan
+
+# Release tarballs (tagged releases): Linux x86_64/aarch64 (static musl) and
+# macOS arm64, each with a .sha256 and a CycloneDX SBOM.
+tar xzf agat-v*-x86_64-unknown-linux-musl.tar.gz && sudo install agat-*/agat /usr/local/bin/
+
+# From source
+cargo install --locked --path crates/agat-cli
+```
+
+The air-gap claim is checked rather than asserted: `demo/run.sh --compare agat`
+runs the full demo with the local binary and again under
+`docker run --network none`, and diffs the two transcripts (CI does this on
+every push).
+
 ## Usage
 
 ### Train once: model your benign "self" and learn families
@@ -271,12 +294,19 @@ source headers and reproduced here:
 
 ## Status
 
-agat's behavioral pipeline (static, disassembly, polymorphic, metamorphic, and
-AI-signal analysis) is implemented. The Artificial Immune System core — antigen
-presentation, self-model, negative selection, recognition, clonal selection, and
-the danger layer — is under active construction; see
-[`docs/AIS_REBUILD_PLAN.md`](docs/AIS_REBUILD_PLAN.md) for the staged plan and the
-honest accounting of where each immune analogy is strong and where it is weaker.
+Implemented and tested: the behavioral pipeline (static, disassembly,
+polymorphic, metamorphic, AI-signal analysis), the Artificial Immune System core
+(antigen, self-model, negative selection, recognition, clonal selection, danger
+layer), the `agat-engine` scan facade, and the operator surface (stateless
+`scan`, JSON/SARIF, exit codes, config file, allow/deny lists), plus the
+container, the air-gap demo, and the measured benchmarks.
+
+Not yet: shareable/signed repertoires (a trained model currently lives in one
+agat home, so a new machine must be trained or given a copy of that home),
+`agat serve`, `agat-rewriter`, `agat-sandbox`, and coverage beyond x86/x64
+PE/ELF with single-byte XOR/ADD/SUB decryptors. The roadmap is
+[`docs/PRODUCT_ROADMAP.md`](docs/PRODUCT_ROADMAP.md); the honest accounting of
+each immune analogy is in [`docs/AIS_REBUILD_PLAN.md`](docs/AIS_REBUILD_PLAN.md) §7.
 
 ---
 

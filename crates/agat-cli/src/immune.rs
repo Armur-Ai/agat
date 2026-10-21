@@ -195,7 +195,10 @@ pub fn cmd_recognize(
 
 /// Render a [`ScanResult`] as the human-readable, two-axis report.
 pub fn print_report(r: &ScanResult) {
-    println!("immune assessment — {}", r.sample.short);
+    match &r.sample.name {
+        Some(name) => println!("immune assessment — {}  {}", r.sample.short, name),
+        None => println!("immune assessment — {}", r.sample.short),
+    }
 
     // --- antigen ---------------------------------------------------
     println!("\nantigen");
