@@ -39,10 +39,10 @@ pub struct SolvedKey {
     pub op: Operation,
     /// The repeating key, in decryption order.
     pub key: Vec<u8>,
-    /// Letters inside readable runs after decryption (solve window).
-    pub letters: usize,
+    /// Likelihood of word-like text after decryption (see [`word_text`]).
+    pub text_score: u64,
     /// The same measure on the undecrypted window.
-    pub baseline_letters: usize,
+    pub baseline_text_score: u64,
 }
 
 /// How much a byte value looks like plaintext (column scoring): a
@@ -117,6 +117,43 @@ pub fn text_stats(buf: &[u8]) -> (usize, usize) {
     }
     flush(start, buf.len());
     (letters, longest)
+}
+
+/// Word-like text in a buffer: readable runs of at least [`MIN_TEXT_RUN`]
+/// characters that are at least half alphabetic (spaces don't count) and
+/// use at least 8 distinct letters. Returns the summed likelihood of those
+/// runs and their total length.
+///
+/// The distinction matters on real binaries: XOR 0x20 turns zero-filled
+/// tables (`.dynsym`, `.got`, `.dynamic`) into long runs of spaces, which
+/// are "readable" and highly likely but are not text. Counted that way, a
+/// stress run over every section of 220 Debian binaries accepted a key in
+/// a third of attempts.
+pub fn word_text(buf: &[u8]) -> (u64, usize) {
+    let (mut score, mut total) = (0u64, 0usize);
+    let mut flush = |run: &[u8]| {
+        if run.len() < MIN_TEXT_RUN {
+            return;
+        }
+        let alpha = run.iter().filter(|b| b.is_ascii_alphabetic()).count();
+        let mut seen = [false; 26];
+        for b in run.iter().filter(|b| b.is_ascii_alphabetic()) {
+            seen[(b.to_ascii_lowercase() - b'a') as usize] = true;
+        }
+        if alpha * 2 >= run.len() && seen.iter().filter(|&&x| x).count() >= 8 {
+            score += likelihood(run);
+            total += run.len();
+        }
+    };
+    let mut start = 0;
+    for (i, &b) in buf.iter().enumerate() {
+        if !is_printable(b) {
+            flush(&buf[start..i]);
+            start = i + 1;
+        }
+    }
+    flush(&buf[start..]);
+    (score, total)
 }
 
 /// Run the decryptor operation forward with a repeating key, as the stub
@@ -211,53 +248,68 @@ fn minimal_period(key: &[u8]) -> Vec<u8> {
 
 /// Solve for the repeating key that `op` decrypts `region` with.
 ///
-/// Returns `None` unless the best decryption raises the plaintext
-/// log-likelihood by at least 8% over the undecrypted bytes *and* contains
-/// a letter-rich readable run of at least [`MIN_TEXT_RUN`] characters.
-/// Likelihood, not a letter count, is the measure because weak keys
-/// (`0x01`, `0x0a`) map letters onto other letters: the ciphertext keeps
-/// its letter count, but spaces turn into `*` and `e` into `o`. Measured
-/// gains for true keys run from 1.12× (weakest) to 2×. A
-/// window that is already at least half letters is not ciphertext and is
-/// declined outright; per-column overfitting of noise never produces such
-/// runs. The analyzer additionally only calls this when a decryptor loop
-/// was detected.
+/// Windows that are more than 5% zero bytes are declined first: that is
+/// structured data, not ciphertext (measured; see the comment in the body).
+///
+/// Candidates are ranked by whole-window likelihood; the shortest period
+/// within 3% of the best wins (longer periods overfit). The winner is
+/// accepted only if it
+/// yields at least 24 characters of word-like text *and* raises that
+/// text's likelihood by at least 8% plus 500 over the undecrypted bytes.
+/// A relative gain, not a letter count, because weak keys (`0x01`,
+/// `0x0a`) map letters onto other letters: the ciphertext keeps much of
+/// its "text", but spaces turn into `!` and `e` into `o`. A window that
+/// is already at least half letters is declined outright (it is not
+/// ciphertext, and repetitive text lets long periods remap columns into
+/// gibberish). The analyzer additionally only calls this when it has
+/// found a decryptor loop.
 pub fn solve(region: &[u8], op: Operation) -> Option<SolvedKey> {
     let window = &region[..region.len().min(SOLVE_WINDOW)];
     if window.len() < MIN_WINDOW {
         return None;
     }
+    // Ciphertext is not zero-heavy: a non-zero key turns plaintext zeros
+    // into key bytes, and random padding is 1/256 zero. Structured data
+    // (symbol tables, relocations, unwind info) is full of zeros, and
+    // remapping those into the letter range was the source of every false
+    // recovery when solving ran over all 5,388 non-executable sections of
+    // 220 Debian binaries: those windows were ≥7.6% zeros (median ~27%),
+    // true ciphertext ≤1.8%.
+    if window.iter().filter(|&&b| b == 0).count() * 20 > window.len() {
+        return None;
+    }
     let (baseline_letters, _) = text_stats(window);
-    // Mostly-readable bytes are not an encrypted payload. Without this,
-    // highly repetitive text lets a long period remap each column's few
-    // distinct bytes onto letters and "gain" gibberish.
     if baseline_letters * 2 >= window.len() {
         return None;
     }
+    let (baseline_text_score, _) = word_text(window);
 
-    let mut scored: Vec<(Vec<u8>, usize, usize)> = Vec::new();
+    // Rank by whole-window likelihood (continuous, so a long period can't
+    // win by tipping one run over the word-like threshold).
+    let mut scored: Vec<(Vec<u8>, u64)> = Vec::new();
     for period in 1..=MAX_PERIOD.min(window.len() / MIN_COLUMN_SAMPLES) {
         let mut raw: Vec<u8> = (0..period)
             .map(|j| best_column_key(&column_histogram(window, j, period), op))
             .collect();
         refine(window, op, &mut raw);
         let key = minimal_period(&raw);
-        if key.iter().all(|&k| k == 0) || scored.iter().any(|(k, _, _)| *k == key) {
+        if key.iter().all(|&k| k == 0) || scored.iter().any(|(k, _)| *k == key) {
             continue; // identity, or a period we already scored
         }
-        let (letters, longest) = text_stats(&decrypt(window, op, &key));
-        scored.push((key, letters, longest));
+        let score = likelihood(&decrypt(window, op, &key));
+        scored.push((key, score));
     }
 
     let max = scored.iter().map(|s| s.1).max()?;
     // Shortest period within 3% of the best: longer periods overfit.
-    let (key, letters, longest) = scored.into_iter().find(|s| s.1 * 100 >= max * 97)?;
-    let gain_ok = likelihood(&decrypt(window, op, &key)) * 100 >= likelihood(window) * 108;
-    (gain_ok && longest >= MIN_TEXT_RUN).then_some(SolvedKey {
+    let (key, _) = scored.into_iter().find(|s| s.1 * 100 >= max * 97)?;
+    let (text_score, text_len) = word_text(&decrypt(window, op, &key));
+    let gain_ok = text_score * 100 >= baseline_text_score * 108 + 50_000;
+    (text_len >= 24 && gain_ok).then_some(SolvedKey {
         op,
         key,
-        letters,
-        baseline_letters,
+        text_score,
+        baseline_text_score,
     })
 }
 
@@ -314,7 +366,7 @@ mod tests {
             let solved = solve(&encrypt(&plain, Operation::Xor, key), Operation::Xor)
                 .unwrap_or_else(|| panic!("no key for {key:02x?}"));
             assert_eq!(solved.key, key, "wrong key for {key:02x?}");
-            assert!(solved.letters > solved.baseline_letters);
+            assert!(solved.text_score > solved.baseline_text_score);
         }
     }
 
@@ -356,6 +408,26 @@ mod tests {
             solve(&noise[..200], Operation::Xor).is_none(),
             "below MIN_WINDOW"
         );
+    }
+
+    #[test]
+    fn spaces_from_zero_tables_are_not_text() {
+        // XOR 0x20 over a zero-filled table yields only spaces: readable,
+        // likely, and not text.
+        assert_eq!(word_text(&[b' '; 64]), (0, 0));
+        let zero_table = vec![0u8; 1024];
+        for op in [Operation::Xor, Operation::Add, Operation::Sub] {
+            assert!(solve(&zero_table, op).is_none(), "{op:?}");
+        }
+        // A sparse table: mostly zeros with a few small integers.
+        let sparse: Vec<u8> = (0..2048)
+            .map(|i| if i % 24 == 0 { (i % 7) as u8 } else { 0 })
+            .collect();
+        for op in [Operation::Xor, Operation::Add, Operation::Sub] {
+            assert!(solve(&sparse, op).is_none(), "sparse {op:?}");
+        }
+        // Real words still count.
+        assert!(word_text(b"This is a hidden message in the payload.").1 > 0);
     }
 
     #[test]
