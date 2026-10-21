@@ -79,16 +79,12 @@ pub fn run(store: Store) -> Result<()> {
             }
         }
     }
-    let mut app = App::new(
-        samples,
-        static_features,
-        disasm_features,
-        poly_features,
-        meta_features,
-        ai_features,
-        verdicts,
-        model.is_some(),
-    );
+    let mut app = App::new(samples, verdicts, model.is_some());
+    app.static_features = static_features;
+    app.disasm_features = disasm_features;
+    app.poly_features = poly_features;
+    app.meta_features = meta_features;
+    app.ai_features = ai_features;
 
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -156,13 +152,10 @@ struct App {
 }
 
 impl App {
+    /// An app over `samples` with their verdicts; the per-analyzer
+    /// feature maps start empty and are filled in by the caller.
     fn new(
         samples: Vec<StoredSample>,
-        static_features: HashMap<SampleId, StaticFeatures>,
-        disasm_features: HashMap<SampleId, DisasmFeatures>,
-        poly_features: HashMap<SampleId, PolyFeatures>,
-        meta_features: HashMap<SampleId, MetaFeatures>,
-        ai_features: HashMap<SampleId, AiFeatures>,
         verdicts: HashMap<SampleId, ScanResult>,
         has_model: bool,
     ) -> Self {
@@ -172,11 +165,11 @@ impl App {
         }
         Self {
             samples,
-            static_features,
-            disasm_features,
-            poly_features,
-            meta_features,
-            ai_features,
+            static_features: HashMap::new(),
+            disasm_features: HashMap::new(),
+            poly_features: HashMap::new(),
+            meta_features: HashMap::new(),
+            ai_features: HashMap::new(),
             verdicts,
             has_model,
             list_state,
@@ -1361,11 +1354,6 @@ mod tests {
     fn app_with(verdicts: Vec<ScanResult>, samples: Vec<StoredSample>, has_model: bool) -> App {
         App::new(
             samples,
-            HashMap::new(),
-            HashMap::new(),
-            HashMap::new(),
-            HashMap::new(),
-            HashMap::new(),
             verdicts
                 .into_iter()
                 .map(|r| (SampleId::from_hex(&r.sample.id).unwrap(), r))
