@@ -45,15 +45,33 @@ pub struct SolvedKey {
     pub baseline_letters: usize,
 }
 
-/// How much a byte value looks like plaintext (column scoring).
+/// How much a byte value looks like plaintext (column scoring): English
+/// character frequency (per mille, rounded) for lower-case letters and
+/// space, a third of that for upper case, small weights for digits and the
+/// punctuation common in payload strings (paths, URLs, headers), zero for
+/// non-printable bytes. Frequency, not just "is a letter", is what tells
+/// the right key byte from one a bit-flip away (`a` vs `c`, `a` vs `A`).
 fn weight(b: u8) -> u32 {
+    const LOWER: [u32; 26] = [
+        65, 12, 22, 35, 100, 18, 16, 50, 57, 1, 6, 33, 20, 57, 63, 15, 1, 50, 53, 75, 23, 8, 19, 2,
+        16, 1,
+    ];
     match b {
-        b'a'..=b'z' | b'A'..=b'Z' | b' ' => 3,
-        b'0'..=b'9' | b'.' | b',' | b'/' | b':' | b'_' | b'-' | b'\n' => 2,
-        0x21..=0x7e | b'\t' | b'\r' => 1,
+        b' ' => 150,
+        b'a'..=b'z' => LOWER[(b - b'a') as usize],
+        b'A'..=b'Z' => LOWER[(b - b'A') as usize] / 3 + 1,
+        b'0'..=b'9' => 8,
+        b'.' | b',' | b'/' | b':' | b'_' | b'-' | b'\n' => 6,
+        0x21..=0x7e | b'\t' | b'\r' => 2,
         _ => 0,
     }
 }
+
+/// Minimum ciphertext bytes per key column: fewer, and a column's few
+/// string bytes can't outvote the random padding around them.
+pub const MIN_COLUMN_SAMPLES: usize = 48;
+/// Smallest window worth solving.
+pub const MIN_WINDOW: usize = 256;
 
 fn is_printable(b: u8) -> bool {
     (0x20..=0x7e).contains(&b) || b == b'\t' || b == b'\n' || b == b'\r'
@@ -130,6 +148,40 @@ fn column_histogram(window: &[u8], offset: usize, period: usize) -> [u32; 256] {
     h
 }
 
+/// Re-solve each key byte from context. A column's first-pass vote mixes
+/// string bytes with the random padding between strings, and with few
+/// samples the padding can win by a bit-flip. Strings are contiguous, so
+/// a position whose neighbours decrypt (under the other key bytes) to
+/// printable text is very likely inside a string: re-score each column
+/// from those positions only, and repeat while the key keeps changing.
+fn refine(window: &[u8], op: Operation, key: &mut [u8]) {
+    let period = key.len();
+    for _ in 0..3 {
+        let plain = decrypt(window, op, key);
+        let mut changed = false;
+        for (j, key_byte) in key.iter_mut().enumerate() {
+            let mut h = [0u32; 256];
+            let mut n = 0;
+            for p in (j..window.len()).step_by(period) {
+                let left = p > 0 && is_printable(plain[p - 1]);
+                let right = p + 1 < plain.len() && is_printable(plain[p + 1]);
+                if left && right {
+                    h[window[p] as usize] += 1;
+                    n += 1;
+                }
+            }
+            if n >= 8 {
+                let k = best_column_key(&h, op);
+                changed |= k != *key_byte;
+                *key_byte = k;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+}
+
 /// Collapse a key that repeats a shorter period (`abab` → `ab`).
 fn minimal_period(key: &[u8]) -> Vec<u8> {
     for p in 1..key.len() {
@@ -152,7 +204,7 @@ fn minimal_period(key: &[u8]) -> Vec<u8> {
 /// was detected.
 pub fn solve(region: &[u8], op: Operation) -> Option<SolvedKey> {
     let window = &region[..region.len().min(SOLVE_WINDOW)];
-    if window.len() < 32 {
+    if window.len() < MIN_WINDOW {
         return None;
     }
     let (baseline_letters, _) = text_stats(window);
@@ -164,12 +216,12 @@ pub fn solve(region: &[u8], op: Operation) -> Option<SolvedKey> {
     }
 
     let mut scored: Vec<(Vec<u8>, usize, usize)> = Vec::new();
-    for period in 1..=MAX_PERIOD.min(window.len() / 8) {
-        let key = minimal_period(
-            &(0..period)
-                .map(|j| best_column_key(&column_histogram(window, j, period), op))
-                .collect::<Vec<u8>>(),
-        );
+    for period in 1..=MAX_PERIOD.min(window.len() / MIN_COLUMN_SAMPLES) {
+        let mut raw: Vec<u8> = (0..period)
+            .map(|j| best_column_key(&column_histogram(window, j, period), op))
+            .collect();
+        refine(window, op, &mut raw);
+        let key = minimal_period(&raw);
         if key.iter().all(|&k| k == 0) || scored.iter().any(|(k, _, _)| *k == key) {
             continue; // identity, or a period we already scored
         }
@@ -279,6 +331,10 @@ mod tests {
             assert!(solve(&noise, op).is_none(), "noise, {op:?}");
         }
         assert!(solve(b"short", Operation::Xor).is_none());
+        assert!(
+            solve(&noise[..200], Operation::Xor).is_none(),
+            "below MIN_WINDOW"
+        );
     }
 
     #[test]
@@ -286,6 +342,47 @@ mod tests {
         assert_eq!(text_stats(b"\x00abc\x00abcdef\x00"), (6, 6));
         assert_eq!(text_stats(b"!!!!!!!!"), (0, 0));
         assert_eq!(text_stats(b"\x01\x02"), (0, 0));
+    }
+
+    #[test]
+    fn exact_keys_from_short_payloads_and_no_false_accepts() {
+        // Payload-sized windows: random padding between strings leaves
+        // only a few string bytes per key column. Every key must come back
+        // exact (a near-miss would corrupt the plaintext fingerprint), and
+        // equally-sized noise must never yield a key.
+        let cases: [(&[u8], &[usize]); 2] = [
+            (&[0xde, 0x4d, 0xbe, 0xef], &[256, 384, 512]),
+            (
+                &[0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88],
+                &[384, 512],
+            ),
+        ];
+        for (key, lens) in cases {
+            for &len in lens {
+                for seed in 1..6u64 {
+                    let plain = payload(seed * 31, len);
+                    let got = solve(&encrypt(&plain, Operation::Xor, key), Operation::Xor);
+                    assert_eq!(
+                        got.map(|g| g.key).as_deref(),
+                        Some(key),
+                        "len {len} seed {seed}"
+                    );
+                    let mut state = seed * 0x9e37 + len as u64;
+                    let noise: Vec<u8> = (0..len)
+                        .map(|_| {
+                            state ^= state << 13;
+                            state ^= state >> 7;
+                            state ^= state << 17;
+                            (state >> 32) as u8
+                        })
+                        .collect();
+                    assert!(
+                        solve(&noise, Operation::Xor).is_none(),
+                        "noise len {len} seed {seed}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]
