@@ -57,6 +57,9 @@ The release that turns the research engine into a deployable product.
   and AArch64 register families in the metamorphic canonical form.
 - Mach-O parsing, including the x86-64 slice of universal binaries;
   Mach-O sample kinds (with Java class-file disambiguation).
+- Expanded, case-insensitive AI-artifact rule set (refusals, modern chat
+  tokens, inference endpoints, weight-format magics): 0 hits across 1,336
+  benign binaries, the AI-rewrite fixture lights up across categories.
 
 **Evidence** (`bench/`)
 - `run.sh`: detection rate on held-out variants and false-positive rate on
@@ -68,6 +71,13 @@ The release that turns the research engine into a deployable product.
 - `substitute.sh`: recognition across instruction substitution.
 - `evaluate.sh`: agat on a user-supplied labeled corpus (real families) —
   detection, attribution, confusion and benign FP, shipping no samples.
+
+**Correctness & safety**
+- A pipeline fuzz test asserts no analyzer panics on ~200 adversarial
+  inputs (malformed/lying ELF/PE/Mach-O headers, noise); the analyzer
+  crates have no unwrap/expect/panic in non-test code.
+- End-to-end CLI tests drive the real binary (exit codes, stateless scans,
+  formats, config errors, signed packs, schema) in ~1 s.
 
 **Packaging and docs**
 - ~12 MB `scratch` container; `demo/run.sh` with a `--network none`
@@ -82,7 +92,7 @@ The release that turns the research engine into a deployable product.
 - Memory cells track their exact covering spread instead of an
   ever-growing bound.
 - The recursive-descent worklist is architecture-neutral (`disasm::descend`).
-- `agat-disasm` 0.2.0, `agat-poly` 0.2.0, `agat-meta` 0.3.0 and `agat-ai` 0.2.0;
+- `agat-disasm` 0.2.0, `agat-poly` 0.2.0, `agat-meta` 0.3.0 and `agat-ai` 0.3.0;
   `ANTIGEN_LAYOUT_VERSION` 2.
   Models trained before these versions must be retrained (old packs are
   refused at import).
