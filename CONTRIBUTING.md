@@ -31,12 +31,13 @@ compare, and `bench/fetch-benign.sh`).
 ## Before you open a PR
 
 ```bash
-cargo fmt --all
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
-bench/generalize.sh                                       # headline claim still holds
-bench/run.sh --benign-dir bench/corpus/debian-bin         # if you touched detection
+make check                          # = fmt --check + clippy -D warnings + test
+bench/generalize.sh                 # the headline claim still holds
+bench/run.sh --benign-dir bench/corpus/debian-bin   # if you touched detection
 ```
+
+`make help` lists every task (build, release, bench, demo, gifs, docker,
+airgap, clean).
 
 CI runs the same gates, plus the `--network none` demo comparison.
 
@@ -49,7 +50,9 @@ CI runs the same gates, plus the `--network none` demo comparison.
 | change detection / learning | `crates/agat-immune` |
 | change the verdict or its JSON | `crates/agat-core/src/scan.rs` (bump `SCAN_SCHEMA_VERSION` on a breaking change) |
 | change scanning, SARIF | `crates/agat-engine` |
-| change the CLI | `crates/agat-cli` |
+| change the CLI | `crates/agat-cli` (styling in `style.rs`, the splash in `banner.rs`) |
+| change the TUI | `crates/agat-tui` |
+| add a diagram or doc | `docs/` (SVGs in `docs/assets/`, index in `docs/README.md`) |
 
 The big picture is in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
