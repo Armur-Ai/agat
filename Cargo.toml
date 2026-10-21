@@ -83,6 +83,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "net", "macros", "signal
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
 jsonschema = "0.33"
+tempfile = "3"
 
 [profile.release]
 lto = "thin"
