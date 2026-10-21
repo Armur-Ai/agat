@@ -336,7 +336,7 @@ fn main() -> Result<()> {
     // usable non-interactively in a pipeline.
     let needs_vault = matches!(
         cli.command,
-        Cmd::Ingest { .. } | Cmd::Analyze { .. } | Cmd::Scan { ingest: true, .. } | Cmd::Tui
+        Cmd::Ingest { .. } | Cmd::Analyze { .. } | Cmd::Scan { ingest: true, .. }
     );
     let vault = if needs_vault {
         let password = read_password()?;
@@ -447,7 +447,7 @@ fn main() -> Result<()> {
             serve::run(model, listen, allow_remote, max_bytes)
         }
         Cmd::Completions { .. } | Cmd::Man => unreachable!("handled before opening the store"),
-        Cmd::Tui => agat_tui::run(vault.expect("tui needs a vault"), store).context("running tui"),
+        Cmd::Tui => agat_tui::run(store).context("running tui"),
     }
 }
 

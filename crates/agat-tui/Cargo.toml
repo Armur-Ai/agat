@@ -16,9 +16,13 @@ agat-disasm.workspace = true
 agat-poly.workspace = true
 agat-meta.workspace = true
 agat-ai.workspace = true
+agat-engine.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 ratatui.workspace = true
 crossterm.workspace = true
+
+[dev-dependencies]
+chrono.workspace = true

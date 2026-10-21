@@ -120,8 +120,9 @@ over real behavioral data. It is not a biological simulation.
 ## Data & trust boundaries
 
 - **Vault** — raw sample bytes, encrypted at rest; only `ingest`,
-  `analyze`, `scan --ingest`, and the TUI open it, and only with the
-  vault password.
+  `analyze`, and `scan --ingest` open it, and only with the vault
+  password. The TUI reads features and verdicts from the store, so it
+  needs no password either.
 - **Stateless scan** — a plain `agat scan` reads each file, analyzes it
   in memory (`AnalysisContext::in_memory`), and recognizes it against the
   stored model. Nothing is written to the vault or the store.

@@ -1,12 +1,12 @@
 //! Ratatui shell for agat.
 //!
-//! Phase 2: tabs over the right pane (Overview, Disasm). Sample
-//! browser on the left, tabbed analyzer view on the right. Disasm
-//! pane shows arch/section info and the first ~40 instructions of
-//! the listing, colored by control-flow kind.
+//! Sample browser on the left, colored by each sample's verdict; tabbed
+//! views on the right: the immune verdict (recognition, danger, model),
+//! then each analyzer (overview, disassembly, polymorphic, metamorphic,
+//! AI signals). Read-only over the store, so it needs no vault password.
 
 use agat_ai::AiFeatures;
-use agat_core::{SampleId, Vault};
+use agat_core::{SampleId, ScanResult, Severity};
 use agat_disasm::{DisasmFeatures, FlowKind};
 use agat_meta::MetaFeatures;
 use agat_poly::{PolyFeatures, Signal};
@@ -32,8 +32,21 @@ use std::collections::HashMap;
 use std::io;
 use std::time::Duration;
 
-pub fn run(_vault: Vault, store: Store) -> Result<()> {
+pub fn run(store: Store) -> Result<()> {
     let samples = store.list_samples()?;
+    // Verdicts from the active model, if one has been trained or imported.
+    let model = agat_engine::ImmuneModel::load(&store).ok();
+    let mut verdicts: HashMap<SampleId, ScanResult> = HashMap::new();
+    if let Some(model) = &model {
+        for s in &samples {
+            if let Ok(map) = agat_engine::feature_map(&store, &s.sample.id) {
+                let name = s.sample.metadata.original_filename.clone();
+                if let Ok(r) = model.scan(&s.sample.id, name, &map) {
+                    verdicts.insert(s.sample.id, r);
+                }
+            }
+        }
+    }
     let mut static_features: HashMap<SampleId, StaticFeatures> = HashMap::new();
     let mut disasm_features: HashMap<SampleId, DisasmFeatures> = HashMap::new();
     let mut poly_features: HashMap<SampleId, PolyFeatures> = HashMap::new();
@@ -73,6 +86,8 @@ pub fn run(_vault: Vault, store: Store) -> Result<()> {
         poly_features,
         meta_features,
         ai_features,
+        verdicts,
+        model.is_some(),
     );
 
     enable_raw_mode()?;
@@ -96,6 +111,7 @@ pub fn run(_vault: Vault, store: Store) -> Result<()> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Tab {
+    Immune,
     Overview,
     Disasm,
     Poly,
@@ -106,20 +122,22 @@ enum Tab {
 impl Tab {
     fn index(self) -> usize {
         match self {
-            Tab::Overview => 0,
-            Tab::Disasm => 1,
-            Tab::Poly => 2,
-            Tab::Meta => 3,
-            Tab::Ai => 4,
+            Tab::Immune => 0,
+            Tab::Overview => 1,
+            Tab::Disasm => 2,
+            Tab::Poly => 3,
+            Tab::Meta => 4,
+            Tab::Ai => 5,
         }
     }
     fn cycle(self) -> Tab {
         match self {
+            Tab::Immune => Tab::Overview,
             Tab::Overview => Tab::Disasm,
             Tab::Disasm => Tab::Poly,
             Tab::Poly => Tab::Meta,
             Tab::Meta => Tab::Ai,
-            Tab::Ai => Tab::Overview,
+            Tab::Ai => Tab::Immune,
         }
     }
 }
@@ -131,6 +149,8 @@ struct App {
     poly_features: HashMap<SampleId, PolyFeatures>,
     meta_features: HashMap<SampleId, MetaFeatures>,
     ai_features: HashMap<SampleId, AiFeatures>,
+    verdicts: HashMap<SampleId, ScanResult>,
+    has_model: bool,
     list_state: ListState,
     active_tab: Tab,
 }
@@ -143,6 +163,8 @@ impl App {
         poly_features: HashMap<SampleId, PolyFeatures>,
         meta_features: HashMap<SampleId, MetaFeatures>,
         ai_features: HashMap<SampleId, AiFeatures>,
+        verdicts: HashMap<SampleId, ScanResult>,
+        has_model: bool,
     ) -> Self {
         let mut list_state = ListState::default();
         if !samples.is_empty() {
@@ -155,8 +177,10 @@ impl App {
             poly_features,
             meta_features,
             ai_features,
+            verdicts,
+            has_model,
             list_state,
-            active_tab: Tab::Overview,
+            active_tab: Tab::Immune,
         }
     }
 
@@ -192,6 +216,11 @@ impl App {
 
     fn selected(&self) -> Option<&StoredSample> {
         self.list_state.selected().and_then(|i| self.samples.get(i))
+    }
+
+    fn selected_verdict(&self) -> Option<&ScanResult> {
+        self.selected()
+            .and_then(|s| self.verdicts.get(&s.sample.id))
     }
 
     fn selected_static(&self) -> Option<&StaticFeatures> {
@@ -257,11 +286,12 @@ fn run_loop<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: &mut 
                     }
                     KeyCode::Down | KeyCode::Char('j') => app.next(),
                     KeyCode::Up | KeyCode::Char('k') => app.prev(),
-                    KeyCode::Char('1') => app.active_tab = Tab::Overview,
-                    KeyCode::Char('2') => app.active_tab = Tab::Disasm,
-                    KeyCode::Char('3') => app.active_tab = Tab::Poly,
-                    KeyCode::Char('4') => app.active_tab = Tab::Meta,
-                    KeyCode::Char('5') => app.active_tab = Tab::Ai,
+                    KeyCode::Char('1') => app.active_tab = Tab::Immune,
+                    KeyCode::Char('2') => app.active_tab = Tab::Overview,
+                    KeyCode::Char('3') => app.active_tab = Tab::Disasm,
+                    KeyCode::Char('4') => app.active_tab = Tab::Poly,
+                    KeyCode::Char('5') => app.active_tab = Tab::Meta,
+                    KeyCode::Char('6') => app.active_tab = Tab::Ai,
                     KeyCode::Tab => app.active_tab = app.active_tab.cycle(),
                     _ => {}
                 }
@@ -295,6 +325,23 @@ fn draw(f: &mut Frame, app: &App) {
             families += 1;
         }
     }
+    let tally = |sev: Severity| {
+        app.verdicts
+            .values()
+            .filter(|r| r.severity() == sev)
+            .count()
+    };
+    let verdict_summary = if app.has_model {
+        format!(
+            "  ·  {} malicious · {} suspicious · {} review · {} clean",
+            tally(Severity::Malicious),
+            tally(Severity::Suspicious),
+            tally(Severity::Review),
+            tally(Severity::Clean)
+        )
+    } else {
+        "  ·  no model yet".to_string()
+    };
     let header = Paragraph::new(Line::from(vec![
         Span::styled(
             " agat ",
@@ -315,6 +362,7 @@ fn draw(f: &mut Frame, app: &App) {
             ),
             Style::default().fg(Color::DarkGray),
         ),
+        Span::styled(verdict_summary, Style::default().fg(Color::Gray)),
     ]));
     f.render_widget(header, chunks[0]);
 
@@ -333,12 +381,10 @@ fn draw(f: &mut Frame, app: &App) {
         app.samples
             .iter()
             .map(|s| {
-                let has_analysis = app.static_features.contains_key(&s.sample.id);
-                let marker = if has_analysis { "●" } else { "○" };
-                let marker_color = if has_analysis {
-                    Color::Green
-                } else {
-                    Color::DarkGray
+                let (marker, marker_color) = match app.verdicts.get(&s.sample.id) {
+                    Some(r) => ("●", severity_color(r.severity())),
+                    None if app.static_features.contains_key(&s.sample.id) => ("○", Color::Gray),
+                    None => ("○", Color::DarkGray),
                 };
                 ListItem::new(Line::from(vec![
                     Span::styled(marker, Style::default().fg(marker_color)),
@@ -346,8 +392,20 @@ fn draw(f: &mut Frame, app: &App) {
                     Span::styled(s.sample.id.short(), Style::default().fg(Color::Yellow)),
                     Span::raw("  "),
                     Span::styled(
-                        format!("{:<9}", s.sample.kind),
-                        Style::default().fg(Color::Green),
+                        {
+                            let name = s
+                                .sample
+                                .metadata
+                                .original_filename
+                                .as_deref()
+                                .unwrap_or("-");
+                            if name.chars().count() > 20 {
+                                format!("{}…", name.chars().take(19).collect::<String>())
+                            } else {
+                                name.to_string()
+                            }
+                        },
+                        Style::default().fg(Color::Gray),
                     ),
                 ]))
             })
@@ -367,6 +425,7 @@ fn draw(f: &mut Frame, app: &App) {
         .split(body[1]);
 
     let tab_titles = vec![
+        Line::from(" Immune "),
         Line::from(" Overview "),
         Line::from(" Disasm "),
         Line::from(" Poly "),
@@ -385,6 +444,7 @@ fn draw(f: &mut Frame, app: &App) {
     f.render_widget(tabs, right_chunks[0]);
 
     let content_lines = match app.active_tab {
+        Tab::Immune => build_immune(app),
         Tab::Overview => build_overview(app),
         Tab::Disasm => build_disasm(app),
         Tab::Poly => build_poly(app),
@@ -401,7 +461,7 @@ fn draw(f: &mut Frame, app: &App) {
         Span::styled(" j/k ", Style::default().fg(Color::Black).bg(Color::Gray)),
         Span::raw(" navigate    "),
         Span::styled(
-            " 1/2/3/4/5/Tab ",
+            " 1-6/Tab ",
             Style::default().fg(Color::Black).bg(Color::Gray),
         ),
         Span::raw(" switch tab    "),
@@ -409,6 +469,125 @@ fn draw(f: &mut Frame, app: &App) {
         Span::raw(" quit "),
     ]));
     f.render_widget(footer, chunks[2]);
+}
+
+fn severity_color(sev: Severity) -> Color {
+    match sev {
+        Severity::Malicious => Color::Red,
+        Severity::Suspicious => Color::Yellow,
+        Severity::Review => Color::Cyan,
+        Severity::Clean => Color::Green,
+    }
+}
+
+/// The immune verdict for the selected sample: the fused severity, then
+/// the two independent axes and the model that produced them.
+fn build_immune(app: &App) -> Vec<Line<'static>> {
+    let dim = Style::default().fg(Color::DarkGray);
+    if !app.has_model {
+        return vec![
+            Line::from(Span::styled("No trained model in this agat home yet.", dim)),
+            Line::from(""),
+            Line::from("Train one:  agat self build <benign ids…> && agat repertoire generate"),
+            Line::from("or import:  agat repertoire import <pack> --trust <key.pub>"),
+        ];
+    }
+    let Some(r) = app.selected_verdict() else {
+        return vec![Line::from(Span::styled(
+            "No verdict for this sample (run `agat analyze` first).",
+            dim,
+        ))];
+    };
+    let sev = r.severity();
+    let label = match sev {
+        Severity::Malicious => " MALICIOUS ",
+        Severity::Suspicious => " SUSPICIOUS ",
+        Severity::Review => " REVIEW ",
+        Severity::Clean => " CLEAN ",
+    };
+    let mut lines = vec![
+        Line::from(vec![
+            Span::styled(
+                label,
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(severity_color(sev))
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw("  "),
+            Span::raw(r.verdict.summary.clone()),
+        ]),
+        Line::from(""),
+    ];
+    if let Some(p) = &r.verdict.policy {
+        lines.push(Line::from(Span::styled(
+            format!("verdict set by operator policy ({p}); the axes below are unchanged"),
+            dim,
+        )));
+        lines.push(Line::from(""));
+    }
+
+    let rec = &r.recognition;
+    lines.push(section_header("recognition: is it non-self?"));
+    lines.push(kv("verdict", rec.verdict.clone()));
+    lines.push(kv(
+        "family",
+        rec.family.clone().unwrap_or_else(|| "-".into()),
+    ));
+    lines.push(kv("affinity", format!("{:.3}", rec.affinity)));
+    lines.push(kv(
+        "memory",
+        if rec.secondary_response {
+            "yes (secondary response)"
+        } else {
+            "no"
+        },
+    ));
+    if let Some(d) = rec.self_surface_distance {
+        lines.push(kv("from self", format!("{d:+.3}")));
+    }
+    lines.push(Line::from(""));
+
+    let d = &r.danger;
+    lines.push(section_header("danger: is it harmful?"));
+    lines.push(kv(
+        "score",
+        format!(
+            "{:.3}  ({})  P {:.2} / D {:.2} / S {:.2}",
+            d.score, d.context, d.pamp, d.danger, d.safe
+        ),
+    ));
+    for sig in d.signals.iter().take(8) {
+        let color = match sig.class.as_str() {
+            "pamp" => Color::Red,
+            "danger" => Color::Yellow,
+            _ => Color::Green,
+        };
+        lines.push(Line::from(vec![
+            Span::raw("    "),
+            Span::styled(format!("{:<7}", sig.class), Style::default().fg(color)),
+            Span::raw(format!("{:<32} {:.2}", sig.name, sig.value)),
+        ]));
+    }
+    lines.push(Line::from(""));
+
+    if let Some(m) = &r.model {
+        lines.push(section_header("model"));
+        let who = match m.source.as_str() {
+            "pack" => format!(
+                "pack {} v{} · {}",
+                m.name.as_deref().unwrap_or("?"),
+                m.version.as_deref().unwrap_or("?"),
+                m.signer
+                    .as_deref()
+                    .map(|k| format!("signed by {k}"))
+                    .unwrap_or_else(|| "unsigned".into())
+            ),
+            _ => "trained locally".to_string(),
+        };
+        lines.push(kv("source", who));
+    }
+    lines
 }
 
 fn build_overview(app: &App) -> Vec<Line<'static>> {
@@ -1085,4 +1264,153 @@ fn kv(key: &str, value: impl Into<String>) -> Line<'static> {
         Span::styled(format!("{:<11}", key), Style::default().fg(Color::DarkGray)),
         Span::raw(value.into()),
     ])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use agat_core::{
+        AntigenSummary, DangerSummary, ModelRef, RecognitionSummary, Sample, SampleKind,
+        SampleMetadata, SampleRef, SignalSummary, Verdict,
+    };
+    use ratatui::backend::TestBackend;
+
+    fn sample(id: u8, name: &str) -> StoredSample {
+        StoredSample {
+            sample: Sample {
+                id: SampleId([id; 32]),
+                kind: SampleKind::Elf64,
+                size: 4096,
+                metadata: SampleMetadata {
+                    original_filename: Some(name.to_string()),
+                    ..Default::default()
+                },
+            },
+            ingested_at: chrono::Utc::now(),
+        }
+    }
+
+    fn verdict(id: SampleId, sev: Severity, family: Option<&str>) -> ScanResult {
+        ScanResult {
+            schema_version: agat_core::SCAN_SCHEMA_VERSION.into(),
+            agat_version: "test".into(),
+            scanned_at: "2026-01-01T00:00:00Z".into(),
+            sample: SampleRef {
+                id: id.to_hex(),
+                short: id.short(),
+                name: None,
+            },
+            antigen: AntigenSummary {
+                dim: 47,
+                blocks: 3,
+                cfg_fingerprint: None,
+                plaintext_fingerprint: None,
+            },
+            recognition: RecognitionSummary {
+                recognized: sev != Severity::Clean,
+                verdict: "non-self — family (secondary response)".into(),
+                family: family.map(String::from),
+                affinity: 0.923,
+                bound_detectors: 1,
+                secondary_response: family.is_some(),
+                self_surface_distance: Some(0.85),
+                known_families: 1,
+            },
+            danger: DangerSummary {
+                score: 0.667,
+                context: "dangerous".into(),
+                pamp: 0.7,
+                danger: 1.0,
+                safe: 0.6,
+                signals: vec![SignalSummary {
+                    class: "pamp".into(),
+                    name: "decryptor_with_recovered_key".into(),
+                    value: 0.7,
+                }],
+            },
+            verdict: Verdict {
+                severity: sev,
+                summary: "recognition and danger agree".into(),
+                policy: None,
+            },
+            model: Some(ModelRef {
+                source: "pack".into(),
+                name: Some("acme-threats".into()),
+                version: Some("2026.10".into()),
+                sha256: None,
+                signer: Some("ec73e23d226e8fdc".into()),
+                antigen_fingerprint: "f".repeat(64),
+            }),
+        }
+    }
+
+    fn render(app: &App) -> String {
+        let mut terminal = Terminal::new(TestBackend::new(140, 40)).unwrap();
+        terminal.draw(|f| draw(f, app)).unwrap();
+        let buf = terminal.backend().buffer().clone();
+        (0..buf.area.height)
+            .map(|y| {
+                (0..buf.area.width)
+                    .map(|x| buf[(x, y)].symbol().to_string())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    fn app_with(verdicts: Vec<ScanResult>, samples: Vec<StoredSample>, has_model: bool) -> App {
+        App::new(
+            samples,
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::new(),
+            verdicts
+                .into_iter()
+                .map(|r| (SampleId::from_hex(&r.sample.id).unwrap(), r))
+                .collect(),
+            has_model,
+        )
+    }
+
+    #[test]
+    fn immune_tab_shows_verdict_axes_and_model() {
+        let a = sample(1, "unseen_variant.bin");
+        let b = sample(2, "baseline_tool.bin");
+        let app = app_with(
+            vec![
+                verdict(a.sample.id, Severity::Malicious, Some("metamorph")),
+                verdict(b.sample.id, Severity::Clean, None),
+            ],
+            vec![a, b],
+            true,
+        );
+        let screen = render(&app);
+        if std::env::var_os("SHOW_SCREEN").is_some() {
+            println!("{screen}");
+        }
+        for needle in [
+            "Immune",
+            "MALICIOUS",
+            "recognition: is it non-self?",
+            "metamorph",
+            "0.923",
+            "danger: is it harmful?",
+            "decryptor_with_recovered_key",
+            "pack acme-threats v2026.10",
+            "1 malicious",
+            "1 clean",
+        ] {
+            assert!(screen.contains(needle), "missing {needle:?} in:\n{screen}");
+        }
+    }
+
+    #[test]
+    fn immune_tab_explains_a_missing_model() {
+        let app = app_with(vec![], vec![sample(1, "x.bin")], false);
+        let screen = render(&app);
+        assert!(screen.contains("No trained model"), "{screen}");
+        assert!(screen.contains("no model yet"), "{screen}");
+    }
 }
