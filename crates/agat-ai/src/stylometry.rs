@@ -137,8 +137,13 @@ fn histogram_entropy(histogram: &std::collections::HashMap<String, usize>) -> f6
         return 0.0;
     }
     let total_f = total as f64;
+    // Sum in a canonical order: floating-point addition isn't associative,
+    // and HashMap iteration order changes per process, so summing in map
+    // order made the same file's score differ in the last bits run to run.
+    let mut counts: Vec<usize> = histogram.values().copied().collect();
+    counts.sort_unstable();
     let mut h = 0.0;
-    for &count in histogram.values() {
+    for count in counts {
         if count == 0 {
             continue;
         }
@@ -237,5 +242,18 @@ mod tests {
         let df = fake_disasm();
         let s = compute(&sf, &df);
         assert!(s.llm_idiom_hits.is_empty());
+    }
+
+    #[test]
+    fn histogram_entropy_is_order_independent() {
+        let pairs: Vec<(String, usize)> = (0..40)
+            .map(|i| (format!("op{i}"), 1 + (i * 7) % 13))
+            .collect();
+        let forward: std::collections::HashMap<_, _> = pairs.iter().cloned().collect();
+        let reversed: std::collections::HashMap<_, _> = pairs.iter().rev().cloned().collect();
+        assert_eq!(
+            histogram_entropy(&forward).to_bits(),
+            histogram_entropy(&reversed).to_bits()
+        );
     }
 }

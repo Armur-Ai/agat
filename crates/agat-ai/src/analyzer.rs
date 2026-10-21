@@ -9,7 +9,8 @@ use agat_disasm::DisasmFeatures;
 use agat_static::StaticFeatures;
 
 const NAME: &str = "ai";
-const VERSION: &str = "0.1.0";
+// 0.2.0: deterministic opcode-diversity entropy (canonical summation order).
+const VERSION: &str = "0.2.0";
 
 pub struct AiAnalyzer;
 
