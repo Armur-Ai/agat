@@ -62,11 +62,16 @@ impl Default for AntigenConfig {
 }
 
 /// Version of the signature *layout*: which features land in which
-/// dimension and how they are scaled. Bump it whenever antigen
-/// construction changes in a way that moves existing signatures, so
-/// trained models built under the old layout are recognized as
-/// incompatible instead of being silently misapplied.
-pub const ANTIGEN_LAYOUT_VERSION: u32 = 1;
+/// dimension and how they are scaled, including the semantics of the
+/// upstream analyzer features it is built from. Bump it whenever antigen
+/// construction or a feeding analyzer changes in a way that moves existing
+/// signatures, so trained models built under the old layout are recognized
+/// as incompatible instead of being silently misapplied.
+///
+/// - 1: initial layout.
+/// - 2: agat-meta 0.2.0 folds instruction substitutions, which changes
+///   canonical block tokens and so the block dimensions.
+pub const ANTIGEN_LAYOUT_VERSION: u32 = 2;
 
 impl AntigenConfig {
     /// A stable identifier of the metric space this config produces:

@@ -7,7 +7,8 @@ use agat_core::{AnalysisContext, Analyzer, Error, FeatureBundle, Result, Sample}
 use agat_disasm::{DisasmFeatures, DisasmLine};
 
 const NAME: &str = "meta";
-const VERSION: &str = "0.1.0";
+// 0.2.0: instruction-substitution folding in the canonical form.
+const VERSION: &str = "0.2.0";
 
 pub struct MetaAnalyzer {
     pub preview_size: usize,

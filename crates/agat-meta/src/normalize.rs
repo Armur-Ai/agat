@@ -138,6 +138,83 @@ pub fn is_canonical_nop(mnemonic: &str, operands: &str) -> bool {
     false
 }
 
+/// Fold semantically-equivalent instruction forms onto one representative:
+/// instruction substitution, the half of metamorphism that register
+/// renaming and NOP removal don't touch. Operands are already canonical
+/// (registers as `R0…`, immediates as `IMM`), so the folds work on text:
+///
+/// | forms | folded to |
+/// |---|---|
+/// | `inc X`, `dec X`, `sub X,IMM`, `add X,±IMM` | `add X,IMM` |
+/// | `lea X,[X±IMM]` | `add X,IMM` |
+/// | `lea X,[Y]` | `mov X,Y` |
+/// | `xor X,X`, `sub X,X` (zeroing) | `mov X,IMM` |
+/// | `test X,X`, `or X,X`, `and X,X` (flag test) | `cmp X,IMM` |
+/// | `add X,X`, `lea X,[X+X]` (doubling) | `shl X,IMM` |
+///
+/// Immediate values are already erased, so the sign of an erased
+/// immediate (`-IMM`) carries nothing and is dropped too. The pair fold
+/// `push A; pop B` → `mov B,A` lives in [`fold_block`].
+pub fn fold_instruction(mnemonic: &str, operands: &str) -> (String, String) {
+    let ops = operands.replace("-IMM", "IMM");
+    let pair = ops.split_once(',');
+    let folded = match (mnemonic, pair) {
+        ("inc" | "dec", None) if !ops.is_empty() => Some(("add", format!("{ops},IMM"))),
+        ("sub", Some((x, "IMM"))) => Some(("add", format!("{x},IMM"))),
+        ("xor" | "sub", Some((x, y))) if x == y => Some(("mov", format!("{x},IMM"))),
+        ("test" | "or" | "and", Some((x, y))) if x == y => Some(("cmp", format!("{x},IMM"))),
+        ("add", Some((x, y))) if x == y => Some(("shl", format!("{x},IMM"))),
+        ("lea", Some((x, mem))) => {
+            let inner = mem.strip_prefix('[').and_then(|m| m.strip_suffix(']'));
+            match inner {
+                Some(m) if m == format!("{x}+IMM") => Some(("add", format!("{x},IMM"))),
+                Some(m) if m == format!("{x}+{x}") => Some(("shl", format!("{x},IMM"))),
+                Some(m) if !m.contains(['+', '*']) => Some(("mov", format!("{x},{m}"))),
+                _ => None,
+            }
+        }
+        _ => None,
+    };
+    match folded {
+        Some((m, o)) => (m.to_string(), o),
+        None => (mnemonic.to_string(), ops),
+    }
+}
+
+/// Fold a canonicalized block: per-instruction folds, then the pair fold
+/// `push A; pop B` → `mov B,A` (a register or immediate moved through the
+/// stack), then drop instructions that became no-ops (`mov X,X`).
+pub fn fold_block(block: Vec<CanonicalInstruction>) -> Vec<CanonicalInstruction> {
+    let folded: Vec<CanonicalInstruction> = block
+        .into_iter()
+        .map(|c| {
+            let (mnemonic, operands) = fold_instruction(&c.mnemonic, &c.operands);
+            CanonicalInstruction { mnemonic, operands }
+        })
+        .collect();
+    let mut out = Vec::with_capacity(folded.len());
+    let mut i = 0;
+    while i < folded.len() {
+        let cur = &folded[i];
+        if cur.mnemonic == "push" {
+            if let Some(next) = folded.get(i + 1).filter(|n| n.mnemonic == "pop") {
+                if !cur.operands.contains('[') && !next.operands.contains('[') {
+                    out.push(CanonicalInstruction {
+                        mnemonic: "mov".to_string(),
+                        operands: format!("{},{}", next.operands, cur.operands),
+                    });
+                    i += 2;
+                    continue;
+                }
+            }
+        }
+        out.push(cur.clone());
+        i += 1;
+    }
+    out.retain(|c| !is_canonical_nop(&c.mnemonic, &c.operands));
+    out
+}
+
 /// Canonicalize a function-level instruction listing.
 ///
 /// All instructions share one [`RegisterRenamer`], so register-family
@@ -154,7 +231,7 @@ pub fn canonicalize_lines(lines: &[&DisasmLine]) -> Vec<CanonicalInstruction> {
         }
         out.push(CanonicalInstruction { mnemonic, operands });
     }
-    out
+    fold_block(out)
 }
 
 /// Per-block canonicalization that shares a renamer with the rest of
@@ -172,7 +249,7 @@ pub fn canonicalize_block_with(
         }
         out.push(CanonicalInstruction { mnemonic, operands });
     }
-    out
+    fold_block(out)
 }
 
 #[cfg(test)]
@@ -229,5 +306,81 @@ mod tests {
         // Different physical regs but same canonical role → same canonical text.
         assert_eq!(v1, "R0,IMM");
         assert_eq!(v2, "R0,IMM");
+    }
+
+    fn ins(m: &str, o: &str) -> CanonicalInstruction {
+        CanonicalInstruction {
+            mnemonic: m.to_string(),
+            operands: o.to_string(),
+        }
+    }
+
+    #[test]
+    fn substitution_forms_fold_to_one_representative() {
+        let f = |m: &str, o: &str| fold_instruction(m, o);
+        let add = ("add".to_string(), "R0,IMM".to_string());
+        for (m, o) in [
+            ("inc", "R0"),
+            ("dec", "R0"),
+            ("sub", "R0,IMM"),
+            ("add", "R0,-IMM"),
+            ("add", "R0,IMM"),
+            ("lea", "R0,[R0+IMM]"),
+        ] {
+            assert_eq!(f(m, o), add, "{m} {o}");
+        }
+        let zero = ("mov".to_string(), "R1,IMM".to_string());
+        assert_eq!(f("xor", "R1,R1"), zero);
+        assert_eq!(f("sub", "R1,R1"), zero);
+        assert_eq!(f("mov", "R1,IMM"), zero);
+        let test = ("cmp".to_string(), "R0,IMM".to_string());
+        assert_eq!(f("test", "R0,R0"), test);
+        assert_eq!(f("or", "R0,R0"), test);
+        assert_eq!(f("and", "R0,R0"), test);
+        assert_eq!(f("add", "R0,R0"), ("shl".to_string(), "R0,IMM".to_string()));
+        assert_eq!(
+            f("lea", "R0,[R0+R0]"),
+            ("shl".to_string(), "R0,IMM".to_string())
+        );
+        assert_eq!(
+            f("lea", "R0,[R1]"),
+            ("mov".to_string(), "R0,R1".to_string())
+        );
+    }
+
+    #[test]
+    fn different_semantics_do_not_fold_together() {
+        let f = |m: &str, o: &str| fold_instruction(m, o);
+        // xor/sub with different operands, memory increments, and scaled
+        // lea are left alone.
+        assert_eq!(f("xor", "R0,R1"), ("xor".to_string(), "R0,R1".to_string()));
+        assert_eq!(f("sub", "R0,R1"), ("sub".to_string(), "R0,R1".to_string()));
+        assert_eq!(
+            f("lea", "R0,[R1+R2*IMM]"),
+            ("lea".to_string(), "R0,[R1+R2*IMM]".to_string())
+        );
+        assert_ne!(f("xor", "R0,R0"), f("add", "R0,IMM"));
+    }
+
+    #[test]
+    fn push_pop_pairs_fold_to_mov_and_noops_drop() {
+        let out = fold_block(vec![
+            ins("push", "IMM"),
+            ins("pop", "R0"),
+            ins("push", "R1"),
+            ins("pop", "R2"),
+            ins("lea", "R3,[R3]"), // mov R3,R3: a no-op
+            ins("push", "[R0]"),   // memory operand: not folded
+            ins("pop", "R1"),
+        ]);
+        assert_eq!(
+            out,
+            vec![
+                ins("mov", "R0,IMM"),
+                ins("mov", "R2,R1"),
+                ins("push", "[R0]"),
+                ins("pop", "R1"),
+            ]
+        );
     }
 }
