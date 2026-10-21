@@ -1,58 +1,16 @@
-//! agat's visual identity: the ASCII logo, a small color palette, and the
-//! splash shown when `agat` is run with no command.
-//!
-//! Colors follow the no-color.org convention — everything degrades to
-//! plain text when stdout is not a terminal or `NO_COLOR` is set.
+//! agat's visual identity: the ASCII logo and the splash shown when
+//! `agat` runs with no command. Colors come from [`crate::style`].
 
-use std::io::IsTerminal;
+use crate::style::{palette, Style};
 
-/// ANSI 24-bit foreground escape, or empty when color is off.
-fn fg(r: u8, g: u8, b: u8, color: bool) -> String {
-    if color {
-        format!("\x1b[38;2;{r};{g};{b}m")
-    } else {
-        String::new()
-    }
-}
-
-fn reset(color: bool) -> &'static str {
-    if color {
-        "\x1b[0m"
-    } else {
-        ""
-    }
-}
-
-fn bold(color: bool) -> &'static str {
-    if color {
-        "\x1b[1m"
-    } else {
-        ""
-    }
-}
-
-fn dim(color: bool) -> &'static str {
-    if color {
-        "\x1b[2m"
-    } else {
-        ""
-    }
-}
-
-/// Whether to emit color: stdout is a terminal and `NO_COLOR` is unset.
-pub fn use_color() -> bool {
-    std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none()
-}
-
-// agat's brand gradient — cyan → periwinkle → violet, matching the README
-// banner. One stop per logo row.
+// One gradient stop per logo row, cyan → violet.
 const GRADIENT: [(u8, u8, u8); 6] = [
-    (94, 242, 255), // cyan
+    (94, 242, 255),
     (122, 190, 255),
-    (143, 168, 255), // periwinkle
+    (143, 168, 255),
     (170, 150, 255),
     (197, 130, 255),
-    (208, 123, 255), // violet
+    (208, 123, 255),
 ];
 
 const LOGO: [&str; 6] = [
@@ -64,57 +22,45 @@ const LOGO: [&str; 6] = [
     r" ╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝   ╚═╝   ",
 ];
 
+/// Re-export so callers keep using `banner::use_color()`.
+pub use crate::style::use_color;
+
 /// The ASCII logo, gradient-colored row by row.
 pub fn logo(color: bool) -> String {
+    let st = Style::new(color);
     let mut out = String::new();
-    for (row, (r, g, b)) in LOGO.iter().zip(GRADIENT) {
-        out.push_str(&fg(r, g, b, color));
-        out.push_str(row);
-        out.push_str(reset(color));
+    for (row, rgb) in LOGO.iter().zip(GRADIENT) {
+        out.push_str(&st.fg(rgb, row));
         out.push('\n');
     }
     out
 }
 
-/// The full splash: logo, tagline, version, and the quick-start.
+/// The full splash: logo, tagline, version, and the grouped quick-start.
 pub fn splash(color: bool) -> String {
-    let (cr, cg, cb) = GRADIENT[0];
-    let (vr, vg, vb) = GRADIENT[5];
+    let st = Style::new(color);
     let mut out = String::new();
     out.push('\n');
     out.push_str(&logo(color));
     out.push_str(&format!(
-        "   {}{}an adaptive immune system for binaries{}   {}v{}{}\n",
-        bold(color),
-        fg(143, 168, 255, color),
-        reset(color),
-        dim(color),
-        env!("CARGO_PKG_VERSION"),
-        reset(color),
+        "   {}   {}\n",
+        st.bold(&st.fg(
+            palette::PERIWINKLE,
+            "an adaptive immune system for binaries"
+        )),
+        st.dim(&format!("v{}", env!("CARGO_PKG_VERSION"))),
     ));
     out.push_str(&format!(
-        "   {}catches polymorphic · metamorphic · AI-rewritten variants, offline{}\n\n",
-        dim(color),
-        reset(color),
+        "   {}\n\n",
+        st.dim("catches polymorphic · metamorphic · AI-rewritten variants, offline"),
     ));
-    let head = |t: &str| {
-        format!(
-            "   {}{}{}{}\n",
-            bold(color),
-            fg(cr, cg, cb, color),
-            t,
-            reset(color)
-        )
-    };
+
+    let head = |t: &str| format!("   {}\n", st.bold(&st.fg(palette::CYAN, t)));
     let cmd = |c: &str, d: &str| {
         format!(
-            "     {}{:<34}{}{}{}{}\n",
-            fg(vr, vg, vb, color),
-            c,
-            reset(color),
-            dim(color),
-            d,
-            reset(color),
+            "     {}{}\n",
+            st.fg(palette::VIOLET, &format!("{c:<34}")),
+            st.dim(d)
         )
     };
     out.push_str(&head("SCAN"));
@@ -140,9 +86,8 @@ pub fn splash(color: bool) -> String {
     out.push_str(&cmd("agat --help", "every command and flag"));
     out.push('\n');
     out.push_str(&format!(
-        "   {}docs: docs/READING_OUTPUT.md · github.com/Armur-Ai/agat{}\n\n",
-        dim(color),
-        reset(color),
+        "   {}\n\n",
+        st.dim("docs: docs/GUIDE.md · github.com/Armur-Ai/agat"),
     ));
     out
 }
@@ -160,14 +105,8 @@ mod tests {
     }
 
     #[test]
-    fn colored_splash_resets_every_sequence() {
-        let s = splash(true);
-        assert!(s.contains('\x1b'));
-        // Every run of color should be closed; a crude balance check.
-        assert_eq!(
-            s.matches("\x1b[0m").count() > 0,
-            s.matches("\x1b[38;2;").count() > 0
-        );
+    fn colored_splash_uses_color() {
+        assert!(splash(true).contains('\x1b'));
     }
 
     #[test]

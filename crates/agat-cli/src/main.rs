@@ -5,6 +5,7 @@ mod config;
 mod immune;
 mod packs;
 mod serve;
+mod style;
 
 use agat_ai::AiFeatures;
 use agat_core::{AnalysisContext, Sample, SampleId, SampleKind, SampleMetadata, ScanResult, Vault};

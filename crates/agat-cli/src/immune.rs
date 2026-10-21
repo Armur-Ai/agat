@@ -8,6 +8,7 @@
 //! renders the returned [`ScanResult`] — the engine is the single source
 //! of the verdict, so the CLI, JSON output, and any future API agree.
 
+use crate::style::{palette, Style};
 use agat_antigen::Antigen;
 use agat_core::{ScanResult, Severity};
 use agat_engine::{
@@ -208,115 +209,132 @@ pub fn cmd_recognize(
 
 /// Render a [`ScanResult`] as the human-readable, two-axis report.
 pub fn print_report(r: &ScanResult) {
-    match &r.sample.name {
-        Some(name) => println!("immune assessment — {}  {}", r.sample.short, name),
-        None => println!("immune assessment — {}", r.sample.short),
-    }
+    let st = Style::new(crate::style::use_color());
+    let head = |t: &str| println!("\n{}", st.bold(&st.fg(palette::CYAN, t)));
+    let kv = |k: &str, v: String| println!("  {:<20}{}", k, v);
 
-    // --- antigen ---------------------------------------------------
-    println!("\nantigen");
+    // header line: badge + id + name
+    let name = r.sample.name.as_deref().unwrap_or("");
     println!(
-        "  signature dim {} · {} canonical block{}",
-        r.antigen.dim,
-        r.antigen.blocks,
-        if r.antigen.blocks == 1 { "" } else { "s" }
-    );
-    println!(
-        "  cfg fingerprint   {}",
-        r.antigen.cfg_fingerprint.as_deref().unwrap_or("-")
-    );
-    println!(
-        "  plaintext finger  {}",
-        r.antigen.plaintext_fingerprint.as_deref().unwrap_or("-")
-    );
-
-    // --- recognition axis ------------------------------------------
-    let fam = r.recognition.known_families;
-    println!(
-        "\nrecognition  ({fam} known famil{})",
-        if fam == 1 { "y" } else { "ies" }
-    );
-    println!("  verdict      {}", r.recognition.verdict);
-    println!(
-        "  family       {}",
-        r.recognition.family.as_deref().unwrap_or("-")
-    );
-    println!("  affinity     {:.3}", r.recognition.affinity);
-    println!("  bound detectors {}", r.recognition.bound_detectors);
-    println!(
-        "  secondary response {}",
-        if r.recognition.secondary_response {
-            "yes (memory cell)"
+        "{}  {}{}",
+        st.severity_badge(r.verdict.severity),
+        st.bold(&r.sample.short),
+        if name.is_empty() {
+            String::new()
         } else {
-            "no"
-        }
+            format!("  {}", st.dim(name))
+        },
     );
-    if let Some(d) = r.recognition.self_surface_distance {
-        println!("  distance from self  {:+.3}", d);
-    }
-
-    // --- danger axis -----------------------------------------------
-    println!("\ndanger  (DCA-style signal fusion)");
-    println!(
-        "  score {:.3}  ·  context {}  ·  P {:.2} / D {:.2} / S {:.2}",
-        r.danger.score, r.danger.context, r.danger.pamp, r.danger.danger, r.danger.safe
-    );
-    if !r.danger.signals.is_empty() {
-        println!("  signals:");
-        for c in r.danger.signals.iter().take(6) {
-            let class = match c.class.as_str() {
-                "pamp" => "PAMP  ",
-                "danger" => "danger",
-                _ => "safe  ",
-            };
-            println!("    [{}] {:<32} {:.2}", class, c.name, c.value);
-        }
-    }
-
-    // --- fused verdict (two axes, not collapsed) -------------------
-    println!("\npriority");
-    let tag = match r.verdict.severity {
-        Severity::Malicious => "MALICIOUS",
-        Severity::Suspicious => "suspicious",
-        Severity::Review => "review",
-        Severity::Clean => "clean",
-    };
-    println!("  [{tag}] {}", r.verdict.summary);
+    println!("  {}", st.dim(&r.verdict.summary));
     if r.verdict.policy.is_some() {
-        println!("  (verdict set by operator policy; the axes above are unchanged)");
+        println!(
+            "  {}",
+            st.dim("(verdict set by operator policy; the axes below are unchanged)")
+        );
     }
+
+    head("ANTIGEN");
+    kv(
+        "signature",
+        format!(
+            "dim {} · {} canonical block{}",
+            r.antigen.dim,
+            r.antigen.blocks,
+            if r.antigen.blocks == 1 { "" } else { "s" }
+        ),
+    );
+    kv(
+        "cfg fingerprint",
+        r.antigen
+            .cfg_fingerprint
+            .clone()
+            .unwrap_or_else(|| "-".into()),
+    );
+    kv(
+        "plaintext finger",
+        r.antigen
+            .plaintext_fingerprint
+            .clone()
+            .unwrap_or_else(|| "-".into()),
+    );
+
+    let rec = &r.recognition;
+    let fam = rec.known_families;
+    head(&format!(
+        "RECOGNITION  ({fam} known famil{})",
+        if fam == 1 { "y" } else { "ies" }
+    ));
+    kv(
+        "is it non-self?",
+        if rec.recognized {
+            st.fg(palette::YELLOW, "yes")
+        } else {
+            st.fg(palette::GREEN, "no (self / unknown)")
+        },
+    );
+    kv("family", rec.family.clone().unwrap_or_else(|| "-".into()));
+    kv("affinity", meter(&st, rec.affinity, palette::VIOLET));
+    kv(
+        "memory cell",
+        if rec.secondary_response {
+            "yes (secondary response)".into()
+        } else {
+            "no".into()
+        },
+    );
+    if let Some(d) = rec.self_surface_distance {
+        kv("distance from self", format!("{d:+.3}"));
+    }
+
+    let d = &r.danger;
+    head("DANGER  (dendritic-cell signal fusion)");
+    kv(
+        "is it harmful?",
+        format!(
+            "{}  context {}  ·  P {:.2} / D {:.2} / S {:.2}",
+            meter(&st, d.score, palette::RED),
+            d.context,
+            d.pamp,
+            d.danger,
+            d.safe
+        ),
+    );
+    for c in d.signals.iter().take(6) {
+        let (tag, col) = match c.class.as_str() {
+            "pamp" => ("PAMP  ", palette::RED),
+            "danger" => ("danger", palette::YELLOW),
+            _ => ("safe  ", palette::GREEN),
+        };
+        println!("    {} {:<32} {:.2}", st.fg(col, tag), c.name, c.value);
+    }
+
     if let Some(m) = &r.model {
-        println!("\nmodel  {}", describe_model(m));
+        head("MODEL");
+        kv("source", describe_model(m));
     }
 }
 
-/// Whether to color terminal output: stdout is a terminal and `NO_COLOR`
-/// is unset (https://no-color.org).
-fn use_color() -> bool {
-    use std::io::IsTerminal;
-    std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none()
-}
-
-fn paint(text: &str, sev: Severity, color: bool) -> String {
-    if !color {
-        return text.to_string();
-    }
-    let code = match sev {
-        Severity::Malicious => "1;31",
-        Severity::Suspicious => "1;33",
-        Severity::Review => "36",
-        Severity::Clean => "32",
-    };
-    format!("\x1b[{code}m{text}\x1b[0m")
+/// A compact 0..1 meter: the value, then a colored bar.
+fn meter(st: &Style, value: f64, color: (u8, u8, u8)) -> String {
+    let v = value.clamp(0.0, 1.0);
+    let filled = (v * 16.0).round() as usize;
+    let bar = format!(
+        "{}{}",
+        "\u{2588}".repeat(filled),
+        "\u{2591}".repeat(16 - filled)
+    );
+    format!("{:.3}  {}", value, st.fg(color, &bar))
 }
 
 /// Render results as one line per file plus a batch summary.
 pub fn print_table(results: &[ScanResult]) {
-    let color = use_color();
-    println!(
-        "{:<11} {:<14} {:>8}  {:<16} FILE",
+    let st = Style::new(crate::style::use_color());
+    let header = format!(
+        "{:<11} {:<16} {:>8}  {:<18} FILE",
         "SEVERITY", "FAMILY", "AFFINITY", "DANGER"
     );
+    println!("{}", st.bold(&st.fg(palette::CYAN, &header)));
+    println!("{}", st.dim(&"─".repeat(header.len().min(78))));
     for r in results {
         let sev = r.severity();
         let label = match sev {
@@ -329,8 +347,8 @@ pub fn print_table(results: &[ScanResult]) {
             "-".to_string()
         };
         let mut family = r.recognition.family.clone().unwrap_or_else(|| "-".into());
-        if family.chars().count() > 14 {
-            family = family.chars().take(13).collect::<String>() + "…";
+        if family.chars().count() > 16 {
+            family = family.chars().take(15).collect::<String>() + "…";
         }
         let name = r
             .sample
@@ -344,27 +362,32 @@ pub fn print_table(results: &[ScanResult]) {
             .map(|p| format!("  [{p}]"))
             .unwrap_or_default();
         println!(
-            "{} {:<14} {:>8}  {:<16} {}{}",
-            paint(&format!("{label:<11}"), sev, color),
+            "{} {:<16} {:>8}  {:<18} {}{}",
+            {
+                let lbl = st.severity(sev);
+                let pad = 11usize.saturating_sub(label.chars().count());
+                format!("{lbl}{}", " ".repeat(pad))
+            },
             family,
             affinity,
             format!("{:.2} {}", r.danger.score, r.danger.context),
             name,
-            policy
+            st.dim(&policy)
         );
     }
     let count = |s: Severity| results.iter().filter(|r| r.severity() == s).count();
     if let Some(m) = results.first().and_then(|r| r.model.as_ref()) {
-        println!("\nmodel  {}", describe_model(m));
+        println!("\n{}  {}", st.dim("model"), describe_model(m));
     }
-    println!(
-        "\n{} scanned · {} malicious · {} suspicious · {} review · {} clean",
+    let tally = format!(
+        "{} scanned · {} malicious · {} suspicious · {} review · {} clean",
         results.len(),
         count(Severity::Malicious),
         count(Severity::Suspicious),
         count(Severity::Review),
         count(Severity::Clean)
     );
+    println!("\n{}", st.bold(&tally));
 }
 
 /// One-line description of the model that produced a result.
