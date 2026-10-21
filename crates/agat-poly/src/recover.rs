@@ -1,10 +1,24 @@
-//! Payload recovery: apply the inverse of a detected DecryptorPattern
-//! to the largest high-entropy region and score the result.
+//! Payload recovery: run a detected decryptor over the most likely
+//! encrypted region and score the result. The key comes either from the
+//! decryptor's immediate operand ([`try_recover`]) or, when there is no
+//! immediate, from cryptanalysis of the ciphertext ([`try_solve`]).
 
 use crate::detect::{DecryptorPattern, Operation};
 use agat_static::{entropy::shannon_entropy, strings::extract_ascii, StaticFeatures};
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
+
+/// How a recovered key was obtained.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum KeySource {
+    /// Read from the decryptor's immediate operand.
+    #[default]
+    Immediate,
+    /// Solved from the ciphertext ([`crate::solve`]): register-held or
+    /// multi-byte keys.
+    Solved,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecoveredPayload {
@@ -12,7 +26,13 @@ pub struct RecoveredPayload {
     pub region_end: u64,
     pub region_size: u64,
     pub operation: Operation,
+    /// First key byte (kept for compatibility; see `key_bytes`).
     pub key: u8,
+    /// The full repeating key, in decryption order.
+    #[serde(default)]
+    pub key_bytes: Vec<u8>,
+    #[serde(default)]
+    pub key_source: KeySource,
     pub original_entropy: f64,
     pub decrypted_entropy: f64,
     pub entropy_drop: f64,
@@ -31,26 +51,79 @@ pub struct RecoveredPayload {
     pub plaintext_fingerprint: String,
 }
 
-/// Attempt to recover the payload described by `pattern` against
-/// the most likely encrypted region of `bytes`. The region is picked
-/// by [`locate_payload_region`] — preferring the largest high-entropy
-/// span, but falling back to the largest non-executable section so
-/// low-entropy XOR'd ASCII still recovers.
+/// Attempt to recover the payload described by `pattern` (an immediate
+/// key) against the most likely encrypted region of `bytes`. The region
+/// is picked by [`locate_payload_region`]: preferring the largest
+/// high-entropy span, but falling back to the largest non-executable
+/// section so low-entropy XOR'd ASCII still recovers.
 pub fn try_recover(
     pattern: DecryptorPattern,
     sf: &StaticFeatures,
     bytes: &[u8],
 ) -> Option<RecoveredPayload> {
+    let (start, end) = region(sf, bytes)?;
+    Some(recover_with(
+        start,
+        end,
+        bytes,
+        pattern.op,
+        &[pattern.key],
+        KeySource::Immediate,
+    ))
+}
+
+/// Recover a payload whose decryptor has no immediate key (register-held
+/// or multi-byte), by solving for the key under the loop's operation.
+pub fn try_solve(op: Operation, sf: &StaticFeatures, bytes: &[u8]) -> Option<RecoveredPayload> {
+    let (start, end) = enclosing_section(sf, bytes, region(sf, bytes)?);
+    let solved = crate::solve::solve(&bytes[start..end], op)?;
+    Some(recover_with(
+        start,
+        end,
+        bytes,
+        op,
+        &solved.key,
+        KeySource::Solved,
+    ))
+}
+
+/// Widen a high-entropy span to the non-executable section containing it.
+/// The entropy curve's windows can clip a payload (a 512-byte blob may
+/// show as a 256-byte high-entropy region), and key solving needs every
+/// ciphertext byte it can get; the stub walks the whole section anyway.
+fn enclosing_section(sf: &StaticFeatures, bytes: &[u8], span: (usize, usize)) -> (usize, usize) {
+    sf.parsed
+        .sections
+        .iter()
+        .filter(|s| !s.characteristics.executable)
+        .map(|s| {
+            let start = s.file_offset as usize;
+            (start, (start + s.file_size as usize).min(bytes.len()))
+        })
+        .filter(|&(start, end)| start <= span.0 && end >= span.1)
+        .min_by_key(|&(start, end)| end - start)
+        .unwrap_or(span)
+}
+
+fn region(sf: &StaticFeatures, bytes: &[u8]) -> Option<(usize, usize)> {
     let (region_start, region_end) = locate_payload_region(sf, bytes.len())?;
     let start = region_start as usize;
     let end = (region_end as usize).min(bytes.len());
-    if start >= end {
-        return None;
-    }
+    (start < end).then_some((start, end))
+}
+
+fn recover_with(
+    start: usize,
+    end: usize,
+    bytes: &[u8],
+    op: Operation,
+    key: &[u8],
+    key_source: KeySource,
+) -> RecoveredPayload {
     let original = &bytes[start..end];
     // The detected instruction *is* the decryptor: run it forward
     // (`add [mem], k` decrypts as c + k), as the stub itself would.
-    let decrypted = crate::solve::decrypt(original, pattern.op, &[pattern.key]);
+    let decrypted = crate::solve::decrypt(original, op, key);
     let original_entropy = shannon_entropy(original);
     let decrypted_entropy = shannon_entropy(&decrypted);
     let entropy_drop = original_entropy - decrypted_entropy;
@@ -62,12 +135,14 @@ pub fn try_recover(
     let plaintext_fingerprint =
         fingerprint_plaintext(&strings.iter().map(|s| s.value.clone()).collect::<Vec<_>>());
 
-    Some(RecoveredPayload {
-        region_start,
-        region_end,
+    RecoveredPayload {
+        region_start: start as u64,
+        region_end: end as u64,
         region_size: (end - start) as u64,
-        operation: pattern.op,
-        key: pattern.key,
+        operation: op,
+        key: key[0],
+        key_bytes: key.to_vec(),
+        key_source,
         original_entropy,
         decrypted_entropy,
         entropy_drop,
@@ -75,7 +150,7 @@ pub fn try_recover(
         recovered_strings,
         recovery_score,
         plaintext_fingerprint,
-    })
+    }
 }
 
 /// Hash the sorted set of recovered strings (filtered to ≥10 chars to

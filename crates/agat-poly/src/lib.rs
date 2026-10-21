@@ -14,12 +14,13 @@
 //! - Entropy-boundary heuristic to locate stub-vs-payload split
 //! - Backward-jump-in-prelude as a corroborating signal
 //!
+//! - Key-less recovery (`solve`): register-held and multi-byte repeating
+//!   XOR/ADD/SUB keys solved from the ciphertext itself
+//!
 //! What it doesn't yet handle (deferred):
 //!
-//! - Register-key XOR loops where the key is loaded into a register
-//!   and used by a `xor [mem], reg` form
-//! - Multi-byte rotating-key XOR
 //! - Multi-stage decryptors / key-derivation routines
+//! - Non-repeating keystreams (RC4, LCG-derived keys, …)
 //! - Full CPU emulation via unicorn (the "obvious upgrade" path)
 
 pub mod analyzer;
@@ -31,4 +32,4 @@ pub mod solve;
 pub use analyzer::PolyAnalyzer;
 pub use detect::{DecryptorPattern, Operation, Signal};
 pub use features::PolyFeatures;
-pub use recover::RecoveredPayload;
+pub use recover::{KeySource, RecoveredPayload};

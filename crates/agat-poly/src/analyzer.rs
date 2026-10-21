@@ -1,14 +1,17 @@
 //! [`agat_core::Analyzer`] implementation for polymorphic detection.
 
+use crate::detect::Signal;
 use crate::detect::{collect_signals, confidence, strongest_pattern};
 use crate::features::PolyFeatures;
-use crate::recover::try_recover;
+use crate::recover::{try_recover, try_solve};
 use agat_core::{AnalysisContext, Analyzer, Error, FeatureBundle, Result, Sample};
 use agat_disasm::DisasmFeatures;
 use agat_static::StaticFeatures;
 
 const NAME: &str = "poly";
-const VERSION: &str = "0.1.0";
+// 0.2.0: key-less recovery for register-held / multi-byte keys, and
+// ADD/SUB decryptors run forward.
+const VERSION: &str = "0.2.0";
 
 pub struct PolyAnalyzer;
 
@@ -37,7 +40,17 @@ impl Analyzer for PolyAnalyzer {
         let signals = collect_signals(&sf, &df);
         let confidence = confidence(&signals);
         let detected_pattern = strongest_pattern(&signals);
-        let recovered = detected_pattern.and_then(|p| try_recover(p, &sf, &bytes));
+        // An immediate key first; if there is none, or it recovers no
+        // strings, solve for the key under the decryptor loop's operation.
+        let recovered = detected_pattern
+            .and_then(|p| try_recover(p, &sf, &bytes))
+            .filter(|r| !r.recovered_strings.is_empty())
+            .or_else(|| {
+                signals.iter().find_map(|s| match s {
+                    Signal::DecryptorLoop { op, .. } => try_solve(*op, &sf, &bytes),
+                    _ => None,
+                })
+            });
 
         let features = PolyFeatures {
             confidence,

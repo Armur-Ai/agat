@@ -1307,10 +1307,20 @@ fn print_poly_features(p: &PolyFeatures) {
             "  region      0x{:08x}..0x{:08x}  ({} bytes)",
             rec.region_start, rec.region_end, rec.region_size
         );
+        let key = if rec.key_bytes.is_empty() {
+            format!("{:02x}", rec.key)
+        } else {
+            hex::encode(&rec.key_bytes)
+        };
+        let source = match rec.key_source {
+            agat_poly::KeySource::Immediate => "immediate operand",
+            agat_poly::KeySource::Solved => "solved from ciphertext",
+        };
         println!(
-            "  operation   {} with 0x{:02x}",
+            "  operation   {} with key 0x{key}  ({} byte{}, {source})",
             rec.operation.label(),
-            rec.key
+            key.len() / 2,
+            if key.len() == 2 { "" } else { "s" }
         );
         println!(
             "  entropy     {:.3} → {:.3}  (drop {:+.3})",
