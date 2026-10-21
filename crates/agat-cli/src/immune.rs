@@ -82,8 +82,14 @@ pub fn cmd_self_build(inputs: Vec<String>, k: usize, store: &Store) -> Result<()
         model.k,
         model.mean_radius
     );
-    println!("saved as self-model '{SLOT}'.");
+    println!("{}", ok_line(&format!("self-model '{SLOT}' saved")));
     Ok(())
+}
+
+/// A green checkmark success line, dimmed when color is off.
+fn ok_line(msg: &str) -> String {
+    let st = Style::new(crate::style::use_color());
+    format!("{} {}", st.fg(palette::GREEN, "✓"), msg)
 }
 
 /// `agat repertoire generate` — negative selection against the self-model.
@@ -128,7 +134,7 @@ pub fn cmd_repertoire_generate(
         cfg.self_tolerance, cfg.coverage, cfg.seed
     );
     println!("  composition: {naive} naive (anomaly) · {matured} matured (family)");
-    println!("saved as repertoire '{SLOT}'.");
+    println!("{}", ok_line(&format!("repertoire '{SLOT}' saved")));
     Ok(())
 }
 
@@ -157,7 +163,13 @@ pub fn cmd_mature(input: String, family: String, store: &Store) -> Result<()> {
     // Retrained locally: the model is no longer the pack that was imported.
     store.clear_pack_info(SLOT)?;
 
-    println!("clonal selection on {} → family '{}'", id.short(), m.family);
+    let st = Style::new(crate::style::use_color());
+    println!(
+        "{} clonal selection on {} → family {}",
+        st.fg(palette::GREEN, "✓"),
+        id.short(),
+        st.fg(palette::VIOLET, &m.family)
+    );
     println!(
         "  {} memory cell for the family ({} variant{} incorporated)",
         if m.new_cell {
