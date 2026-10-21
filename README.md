@@ -15,6 +15,7 @@
   <img alt="SARIF 2.1.0" src="https://img.shields.io/badge/output-SARIF%202.1.0-8fa8ff?style=flat-square&labelColor=0b1226">
   <img alt="Image size" src="https://img.shields.io/badge/container-~12%20MB-ff4fd8?style=flat-square&labelColor=0b1226">
   <img alt="Signed model packs" src="https://img.shields.io/badge/models-Ed25519%20signed-ffc857?style=flat-square&labelColor=0b1226">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-154%20passing-2bd99a?style=flat-square&labelColor=0b1226">
 </p>
 
 <p align="center">
@@ -22,7 +23,8 @@
   <a href="#-how-it-works">How it works</a> ·
   <a href="#-measured-not-promised">Benchmarks</a> ·
   <a href="#-deploy-it">Deploy</a> ·
-  <a href="docs/READING_OUTPUT.md">Reading the output</a> ·
+  <a href="docs/GUIDE.md">User guide</a> ·
+  <a href="docs/README.md">Docs</a> ·
   <a href="docs/ARCHITECTURE.md">Architecture</a>
 </p>
 
