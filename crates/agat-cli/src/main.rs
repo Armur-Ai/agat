@@ -6,7 +6,7 @@ mod packs;
 mod serve;
 
 use agat_ai::AiFeatures;
-use agat_core::{AnalysisContext, Sample, SampleId, SampleKind, SampleMetadata, Vault};
+use agat_core::{AnalysisContext, Sample, SampleId, SampleKind, SampleMetadata, ScanResult, Vault};
 use agat_disasm::{DisasmFeatures, FlowKind};
 use agat_meta::MetaFeatures;
 use agat_poly::{PolyFeatures, Signal};
@@ -68,6 +68,10 @@ enum Cmd {
         /// (and persist its features), as `agat ingest` + `analyze` would.
         #[arg(long)]
         ingest: bool,
+        /// Files to analyze in parallel (default: all cores). Stateless
+        /// scans only; `--ingest` runs sequentially.
+        #[arg(long, short = 'j')]
+        jobs: Option<usize>,
         #[command(flatten)]
         out: OutputArgs,
     },
@@ -430,10 +434,14 @@ fn main() -> Result<()> {
         Cmd::Scan {
             paths,
             ingest: _,
+            jobs,
             out,
         } => {
             let (format, fail_on) = out.resolve(&cfg);
-            let worst = cmd_scan(&paths, format, cfg.policy()?, vault.as_ref(), &store)?;
+            let jobs = jobs
+                .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get()))
+                .max(1);
+            let worst = cmd_scan(&paths, format, cfg.policy()?, jobs, vault.as_ref(), &store)?;
             drop(store);
             std::process::exit(fail_on.exit_code(worst));
         }
@@ -564,6 +572,7 @@ fn cmd_scan(
     paths: &[PathBuf],
     format: immune::OutputFormat,
     policy: agat_engine::ScanPolicy,
+    jobs: usize,
     vault: Option<&Vault>,
     store: &Store,
 ) -> Result<agat_core::Severity> {
@@ -580,27 +589,42 @@ fn cmd_scan(
 
     // Load the trained model once for the whole batch.
     let model = agat_engine::ImmuneModel::load(store)?.with_policy(policy);
-    let mut results = Vec::with_capacity(files.len());
-    for file in &files {
-        let name = file.to_str().map(String::from);
-        let result = match vault {
-            Some(vault) => {
+    let results: Vec<ScanResult> = match vault {
+        // Library mode writes to the store, which is single-threaded.
+        Some(vault) => {
+            let mut out = Vec::with_capacity(files.len());
+            for file in &files {
+                let name = file.to_str().map(String::from);
                 let (id, _newly) = ingest_one(file, vault, store)?;
                 let stored = store.get_sample(&id)?.ok_or_else(|| {
                     anyhow::anyhow!("sample {} missing from store after ingest", id.short())
                 })?;
                 // Analyze (idempotent — skips analyzers already at the current version).
                 run_analyzers(&stored, false, vault, store, true)?;
-                model.scan(&id, name, &agat_engine::feature_map(store, &id)?)?
+                out.push(model.scan(&id, name, &agat_engine::feature_map(store, &id)?)?);
             }
-            None => {
-                let bytes =
-                    std::fs::read(file).with_context(|| format!("reading {}", file.display()))?;
-                model.scan_bytes(&bytes, name)?
-            }
-        };
-        results.push(result);
-    }
+            out
+        }
+        // Stateless mode shares only the immutable model: scan files in
+        // parallel, keeping results in file order.
+        None => {
+            use rayon::prelude::*;
+            let pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(jobs)
+                .build()
+                .context("starting the scan thread pool")?;
+            pool.install(|| {
+                files
+                    .par_iter()
+                    .map(|file| {
+                        let bytes = std::fs::read(file)
+                            .with_context(|| format!("reading {}", file.display()))?;
+                        model.scan_bytes(&bytes, file.to_str().map(String::from))
+                    })
+                    .collect::<Result<Vec<_>>>()
+            })?
+        }
+    };
     // The table prints its own tally; elsewhere note batch size on stderr.
     if !single && format != immune::OutputFormat::Table {
         eprintln!("scanned {} file(s)", results.len());
