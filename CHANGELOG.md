@@ -62,6 +62,8 @@ The release that turns the research engine into a deployable product.
 - `keys.sh`: exact key recovery, plus `--stress` (the solver run ungated
   over every data section of a benign corpus).
 - `substitute.sh`: recognition across instruction substitution.
+- `evaluate.sh`: agat on a user-supplied labeled corpus (real families) —
+  detection, attribution, confusion and benign FP, shipping no samples.
 
 **Packaging and docs**
 - ~12 MB `scratch` container; `demo/run.sh` with a `--network none`

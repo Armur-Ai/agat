@@ -10,6 +10,7 @@ with `python3` and the agat workspace.
 | `sweep.sh` | the affinity weights aren't a hand-tuned knife edge: detection/FP under 32 perturbed weightings |
 | `keys.sh` | register-held and multi-byte decryptor keys are recovered *exactly*, and never "recovered" from benign data |
 | `substitute.sh` | variants that swap instructions for equivalents collapse to one fingerprint and are recognized unseen |
+| `evaluate.sh` | agat on a **labeled corpus you supply** (real families): detection, attribution, confusion, benign FP — ships no samples |
 | `fetch-benign.sh` | builds the real benign corpus `run.sh` and `sweep.sh` measure FPs on |
 
 ## `run.sh` — detection and false-positive rates
@@ -202,6 +203,45 @@ by turning zero-filled tables into "text" made of spaces, then small-integer
 tables into letter-range gibberish. The fixes (word-like text only, and
 declining windows over 5% zero bytes, since true ciphertext measured ≤1.8%)
 are documented in `crates/agat-poly/src/solve.rs`.
+
+## `evaluate.sh` — against your own labeled corpus
+
+Every script above uses synthetic families. `evaluate.sh` measures agat on
+**whatever labeled samples you point it at** — real malware families, your
+own curated set — and ships none of them. You provide a manifest, one
+`<relative/path>\t<label>` per line under a corpus root; `benign` is the
+benign label, anything else is a family.
+
+```sh
+bench/evaluate.sh --corpus /data/samples --labels /data/labels.tsv
+bench/evaluate.sh --corpus /data/samples --labels /data/labels.tsv --json
+bench/evaluate.sh --corpus … --labels … --min-detect 0.8 --max-fp 0.0   # CI gate
+```
+
+It splits each label `--holdout` (default 0.3) into train/held-out, trains
+self on benign-train and matures each family on its train part, then scans
+every held-out sample and reports **detection rate**, **attribution rate**
+(of detected, the share put in the right family), a **confusion** breakdown
+(which family each held-out sample landed in), and the **benign
+false-positive** rate. Exit `0` if detection ≥ `--min-detect` and benign
+malicious-FP ≤ `--max-fp`.
+
+```
+================ labeled-corpus evaluation ================
+  family                    held   detect   attrib
+  metamorph                    2  100.0%  100.0%
+  substituted                  3  100.0%  100.0%
+  — overall —                  5  100.0%  100.0%
+
+  benign held-out: n=4 · non-clean 0 · malicious 0 · mis-attributed 0
+```
+
+(That run is the harness self-test on synthetic families; real numbers
+depend on your corpus.) The split is deterministic (a salted hash of each
+path), so a run reproduces. Honest caveat: agat trains self on benign like
+what you scan, so give it a representative benign set — a model trained on
+the wrong "normal" inflates the FP rate (see the synthetic-vs-Debian note
+below).
 
 ## `substitute.sh` — recognition across instruction substitution
 
