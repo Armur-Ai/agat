@@ -70,7 +70,8 @@ impl Default for AntigenConfig {
 ///
 /// - 1: initial layout.
 /// - 2: agat-meta 0.2.0 folds instruction substitutions, which changes
-///   canonical block tokens and so the block dimensions.
+///   canonical block tokens and so the block dimensions; and AArch64
+///   samples gain structural (disassembly/CFG) features they lacked.
 pub const ANTIGEN_LAYOUT_VERSION: u32 = 2;
 
 impl AntigenConfig {

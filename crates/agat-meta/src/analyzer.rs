@@ -8,7 +8,8 @@ use agat_disasm::{DisasmFeatures, DisasmLine};
 
 const NAME: &str = "meta";
 // 0.2.0: instruction-substitution folding in the canonical form.
-const VERSION: &str = "0.2.0";
+// 0.3.0: AArch64 register families.
+const VERSION: &str = "0.3.0";
 
 pub struct MetaAnalyzer {
     pub preview_size: usize,

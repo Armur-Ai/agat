@@ -19,7 +19,8 @@ fn register_family(reg: &str) -> Option<&'static str> {
         "rdx" | "edx" | "dx" | "dh" | "dl" => "rdx",
         "rsi" | "esi" | "si" | "sil" => "rsi",
         "rdi" | "edi" | "di" | "dil" => "rdi",
-        "rsp" | "esp" | "sp" | "spl" => "rsp",
+        // `sp` is also AArch64's stack pointer; one canonical name fits both.
+        "rsp" | "esp" | "sp" | "spl" | "wsp" => "rsp",
         "rbp" | "ebp" | "bp" | "bpl" => "rbp",
         "r8" | "r8d" | "r8w" | "r8b" => "r8",
         "r9" | "r9d" | "r9w" | "r9b" => "r9",
@@ -29,14 +30,33 @@ fn register_family(reg: &str) -> Option<&'static str> {
         "r13" | "r13d" | "r13w" | "r13b" => "r13",
         "r14" | "r14d" | "r14w" | "r14b" => "r14",
         "r15" | "r15d" | "r15w" | "r15b" => "r15",
-        _ => return None,
+        // AArch64 registers with a fixed role pass through by name.
+        "x29" | "w29" | "fp" => "x29",
+        "x30" | "w30" | "lr" => "x30",
+        "xzr" | "wzr" => "xzr",
+        _ => return arm64_family(reg),
     })
 }
 
+/// AArch64 general-purpose registers `x0`–`x28` / `w0`–`w28` (the 64-
+/// and 32-bit views share a family, like `rax`/`eax`).
+fn arm64_family(reg: &str) -> Option<&'static str> {
+    const X: [&str; 29] = [
+        "x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7", "x8", "x9", "x10", "x11", "x12", "x13",
+        "x14", "x15", "x16", "x17", "x18", "x19", "x20", "x21", "x22", "x23", "x24", "x25", "x26",
+        "x27", "x28",
+    ];
+    let digits = reg.strip_prefix('x').or_else(|| reg.strip_prefix('w'))?;
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    X.get(digits.parse::<usize>().ok()?).copied()
+}
+
 /// Stateful renamer: assigns `R0`, `R1`, ... to each unique register
-/// family on first appearance. Rsp and rbp pass through unchanged
-/// because their semantic role (stack/base pointer) shouldn't be
-/// confused with general-purpose registers.
+/// family on first appearance. Registers with a fixed semantic role
+/// (x86 `rsp`/`rbp`; AArch64 `x29`/`x30`/`xzr`, and `sp` as `rsp`) pass through
+/// unchanged, so they aren't confused with general-purpose registers.
 pub struct RegisterRenamer {
     map: HashMap<&'static str, String>,
     next: usize,
@@ -51,7 +71,10 @@ impl RegisterRenamer {
     }
 
     pub fn rename(&mut self, family: &'static str) -> String {
-        if matches!(family, "rsp" | "rbp") {
+        // Registers with a fixed semantic role keep their names: the x86
+        // stack/base pointers, and AArch64's frame pointer, link register,
+        // stack pointer and zero register.
+        if matches!(family, "rsp" | "rbp" | "x29" | "x30" | "xzr") {
             return family.to_string();
         }
         if let Some(name) = self.map.get(family) {
@@ -313,6 +336,27 @@ mod tests {
             mnemonic: m.to_string(),
             operands: o.to_string(),
         }
+    }
+
+    #[test]
+    fn arm64_registers_rename_and_fixed_roles_pass_through() {
+        let mut r1 = RegisterRenamer::new();
+        let mut r2 = RegisterRenamer::new();
+        // The same loop with different register allocation.
+        let a = canonicalize_operands("w3, [x1], #0x1", &mut r1);
+        let b = canonicalize_operands("w9, [x5], #0x1", &mut r2);
+        assert_eq!(a, b);
+        assert_eq!(a, "R0,[R1],#IMM");
+        // w3 and x3 are one family.
+        assert_eq!(canonicalize_operands("x3", &mut r1), "R0");
+        // Fixed roles keep their names; x86 tokens are untouched.
+        let mut r = RegisterRenamer::new();
+        assert_eq!(
+            canonicalize_operands("x29, x30, [sp, #-0x20]!", &mut r),
+            "x29,x30,[rsp,#-IMM]!"
+        );
+        assert_eq!(canonicalize_operands("xzr", &mut r), "xzr");
+        assert_eq!(canonicalize_operands("xmm0, word", &mut r), "xmm0,word");
     }
 
     #[test]
