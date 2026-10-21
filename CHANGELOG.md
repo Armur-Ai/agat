@@ -23,6 +23,9 @@ The release that turns the research engine into a deployable product.
   `GET /healthz`) with an `X-Agat-Severity` header; loopback-only unless
   `--allow-remote`.
 - `agat completions <shell>`, `agat man`, and a workflow-ordered `--help`.
+- `agat tui` is a verdict console: an Immune tab (severity, recognition and
+  danger axes, model provenance), severity-colored sample list with file
+  names, and a verdict tally; it no longer asks for the vault password.
 
 **Signed model packs**
 - `agat key generate`, `agat repertoire export | import | info`: a trained

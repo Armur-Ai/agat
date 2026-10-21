@@ -236,6 +236,11 @@ agat scan ./release --fail-on malicious             # gate a pipeline on the ver
 Exit codes are the contract: **`0`** clean · **`2`** review/suspicious ·
 **`3`** malicious · **`1`** agat itself failed.
 
+For the analyst's chair, `agat tui` is a terminal verdict console over the
+sample library: severity-colored samples, each verdict's recognition and
+danger axes, the model that made the call, and per-analyzer drill-downs
+(disassembly, polymorphic recovery, metamorphic form, AI signals).
+
 ### Plug it into SOAR, mail gateways, and pipelines (`agat serve`)
 
 ```bash
@@ -352,7 +357,7 @@ agat-antigen   signature vector + affinity metric
 agat-immune    self model · negative selection · clonal memory · danger
 agat-engine    analyze → recognize → fuse → ScanResult (+ SARIF)
 agat-cli       the `agat` binary
-agat-tui       terminal UI
+agat-tui       terminal verdict console
 ```
 
 Deep dive: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
