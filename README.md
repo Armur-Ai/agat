@@ -223,6 +223,21 @@ agat scan ./release --fail-on malicious             # gate a pipeline on the ver
 Exit codes are the contract: **`0`** clean · **`2`** review/suspicious ·
 **`3`** malicious · **`1`** agat itself failed.
 
+### Plug it into SOAR, mail gateways, and pipelines (`agat serve`)
+
+```bash
+agat serve                                   # http://127.0.0.1:8080, model loaded once
+curl --data-binary @invoice.exe 'localhost:8080/v1/scan?name=invoice.exe'   # → ScanResult JSON
+curl --data-binary @invoice.exe 'localhost:8080/v1/scan?format=sarif'       # → SARIF
+curl localhost:8080/v1/model                 # which signed pack is answering
+```
+
+Every verdict is a `200` with the severity in the body and in an
+`X-Agat-Severity` header, so a playbook can branch without parsing JSON. It
+binds loopback only; there is no built-in auth, so wider exposure belongs behind
+an authenticating reverse proxy (`--allow-remote`). In the container:
+`docker run -p 127.0.0.1:8080:8080 -v ~/.agat:/data agat serve --listen 0.0.0.0:8080 --allow-remote`.
+
 ### Drop it into CI
 
 ```yaml
@@ -293,7 +308,7 @@ Defenders deserve exact limits, so here they are:
 - [x] Evidence: generalization, detection/FP rates on real binaries, weight sweep
 - [x] Packaging: ~10 MB container, air-gap proof, deterministic demo
 - [x] Signed model packs: train once, verify and deploy to air-gapped fleets
-- [ ] `agat serve`: local REST endpoint for SOAR / pipeline integration
+- [x] `agat serve`: local HTTP endpoint for SOAR / pipeline integration
 - [ ] Coverage: multi-byte keys, Mach-O, ARM64, instruction folding
 - [ ] `agat-rewriter`: ethically-scoped fixture generator for AI-rewrite research
 

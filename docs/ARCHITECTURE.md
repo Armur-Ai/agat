@@ -40,7 +40,7 @@ and the learned immune state live in a local SQLite store.
                         └───────────────────┬────────────────────────┘
                                             │  ScanResult (JSON / exit code)
                                             ▼
-                             operator CLI  ·  (future) agat serve
+                    operator CLI  ·  agat serve (local HTTP)
 ```
 
 ## The two axes, kept separate
