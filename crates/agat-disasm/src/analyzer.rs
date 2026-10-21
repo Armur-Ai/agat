@@ -178,7 +178,9 @@ fn top_k_mnemonics(lines: &[DisasmLine], k: usize) -> HashMap<String, usize> {
         *hist.entry(l.mnemonic.clone()).or_insert(0) += 1;
     }
     let mut v: Vec<(String, usize)> = hist.into_iter().collect();
-    v.sort_by(|a, b| b.1.cmp(&a.1));
+    // Highest count first; ties broken by mnemonic so the top-k cut is
+    // deterministic (HashMap iteration order is not).
+    v.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
     v.truncate(k);
     v.into_iter().collect()
 }
@@ -194,4 +196,37 @@ fn estimate_functions(blocks: &[crate::cfg::BasicBlock], edges: &[crate::cfg::Ed
         .collect();
     // The entry block is always at least one function.
     call_targets.len() + 1
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::disasm::FlowKind;
+
+    fn line(mnemonic: &str) -> DisasmLine {
+        DisasmLine {
+            address: 0,
+            bytes_hex: String::new(),
+            mnemonic: mnemonic.to_string(),
+            operands: String::new(),
+            flow: FlowKind::Next,
+            branch_target: None,
+            immediate: None,
+            writes_memory: false,
+        }
+    }
+
+    #[test]
+    fn top_k_breaks_count_ties_by_mnemonic() {
+        // mov ×3, then five mnemonics tied at 1: k = 3 keeps mov plus the
+        // two alphabetically-first ties, every time.
+        let mut lines: Vec<DisasmLine> = ["mov", "mov", "mov"].iter().map(|m| line(m)).collect();
+        lines.extend(["xor", "add", "jmp", "cmp", "inc"].iter().map(|m| line(m)));
+        for _ in 0..20 {
+            let top = top_k_mnemonics(&lines, 3);
+            let mut keys: Vec<&str> = top.keys().map(String::as_str).collect();
+            keys.sort_unstable();
+            assert_eq!(keys, ["add", "cmp", "mov"]);
+        }
+    }
 }
