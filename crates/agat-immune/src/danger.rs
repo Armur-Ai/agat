@@ -176,6 +176,16 @@ pub fn assess(signals: &DangerSignals, cfg: &DangerConfig) -> DangerAssessment {
 
 /// Import substrings that signal code-injection / self-modification /
 /// anti-analysis capability — classic danger markers.
+/// Section/segment names left behind by common runtime packers. These are
+/// rare in ordinary software and a strong PAMP: a packed executable is a
+/// definitive "self-decrypting payload" marker. Matched case-insensitively
+/// as a prefix of the section name.
+const PACKER_SECTIONS: &[&str] = &[
+    "upx0", "upx1", "upx2", "upx!", ".aspack", ".adata", ".nsp0", ".nsp1", "fsg!", ".mpress1",
+    ".mpress2", ".boom", ".petite", ".pec", "pebundle", ".themida", ".vmp0", ".vmp1", ".enigma",
+    ".packed", ".yoda",
+];
+
 const SUSPICIOUS_IMPORTS: &[&str] = &[
     "virtualalloc",
     "virtualprotect",
@@ -267,6 +277,14 @@ pub fn signals_from_features(
         if wx {
             add("writable_executable_section", SignalClass::Danger, 0.4);
         }
+        // Known packer section names — a strong self-decrypting-payload tell.
+        let packed = sf.parsed.sections.iter().any(|sec| {
+            let n = sec.name.to_ascii_lowercase();
+            PACKER_SECTIONS.iter().any(|p| n.starts_with(p))
+        });
+        if packed {
+            add("packer_section_name", SignalClass::Pamp, 0.6);
+        }
         let suspicious = sf.parsed.imports.iter().any(|imp| {
             let n = imp.name.to_ascii_lowercase();
             SUSPICIOUS_IMPORTS.iter().any(|s| n.contains(s))
@@ -337,6 +355,77 @@ pub fn signals_from_features(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use agat_static::parse::{ParsedBinary, Section, SectionCharacteristics};
+
+    fn section(name: &str) -> Section {
+        Section {
+            name: name.to_string(),
+            virtual_address: 0,
+            virtual_size: 0,
+            file_offset: 0,
+            file_size: 0,
+            characteristics: SectionCharacteristics {
+                readable: true,
+                writable: false,
+                executable: false,
+            },
+            entropy: 0.0,
+            sha256: String::new(),
+        }
+    }
+
+    fn sf_with_sections(names: &[&str]) -> agat_static::StaticFeatures {
+        use agat_static::entropy::EntropyCurve;
+        use agat_static::features::StringSummary;
+        use agat_static::hashes::Hashes;
+        agat_static::StaticFeatures {
+            size: 0,
+            parsed: ParsedBinary {
+                format: agat_static::parse::BinaryFormat::Pe,
+                arch: agat_static::parse::Arch::X86_64,
+                bits: 64,
+                entry_point: 0,
+                sections: names.iter().map(|n| section(n)).collect(),
+                imports: vec![],
+                exports: vec![],
+            },
+            hashes: Hashes {
+                sha256: String::new(),
+                md5: String::new(),
+                imphash: None,
+            },
+            entropy: EntropyCurve {
+                window_size: 0,
+                step: 0,
+                overall: 0.0,
+                points: vec![],
+                high_entropy_regions: vec![],
+            },
+            strings: StringSummary {
+                min_len: 4,
+                ascii_count: 0,
+                utf16le_count: 0,
+                samples: vec![],
+            },
+        }
+    }
+
+    #[test]
+    fn packer_section_names_raise_a_pamp() {
+        let packed = sf_with_sections(&["UPX0", "UPX1", ".rsrc"]);
+        let sig = signals_from_features(Some(&packed), None, None, None);
+        assert!(sig
+            .contributors
+            .iter()
+            .any(|c| c.name == "packer_section_name" && c.class == SignalClass::Pamp));
+        // Ordinary section names do not.
+        let normal = sf_with_sections(&[".text", ".data", ".rdata", ".rsrc", ".reloc"]);
+        let sig = signals_from_features(Some(&normal), None, None, None);
+        assert!(!sig
+            .contributors
+            .iter()
+            .any(|c| c.name == "packer_section_name"));
+    }
 
     fn signals(p: f64, d: f64, s: f64) -> DangerSignals {
         DangerSignals {
