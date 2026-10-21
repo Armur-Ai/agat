@@ -74,6 +74,10 @@ pub enum SampleKind {
     Pe64,
     Elf32,
     Elf64,
+    MachO32,
+    MachO64,
+    /// Universal ("fat") Mach-O: several architecture slices in one file.
+    MachOFat,
     Shellcode,
     Unknown,
 }
@@ -102,6 +106,21 @@ impl SampleKind {
                 };
             }
         }
+        match bytes[..4] {
+            // MH_MAGIC / MH_CIGAM (32-bit), MH_MAGIC_64 / MH_CIGAM_64.
+            [0xCE, 0xFA, 0xED, 0xFE] | [0xFE, 0xED, 0xFA, 0xCE] => return SampleKind::MachO32,
+            [0xCF, 0xFA, 0xED, 0xFE] | [0xFE, 0xED, 0xFA, 0xCF] => return SampleKind::MachO64,
+            // FAT_MAGIC is also the Java class-file magic; a fat header's
+            // next field is a small slice count, a class file's is a
+            // version number (≥ 45).
+            [0xCA, 0xFE, 0xBA, 0xBE] if bytes.len() >= 8 => {
+                let n = u32::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
+                if (1..=16).contains(&n) {
+                    return SampleKind::MachOFat;
+                }
+            }
+            _ => {}
+        }
         SampleKind::Unknown
     }
 
@@ -111,6 +130,9 @@ impl SampleKind {
             SampleKind::Pe64 => "Pe64",
             SampleKind::Elf32 => "Elf32",
             SampleKind::Elf64 => "Elf64",
+            SampleKind::MachO32 => "MachO32",
+            SampleKind::MachO64 => "MachO64",
+            SampleKind::MachOFat => "MachOFat",
             SampleKind::Shellcode => "Shellcode",
             SampleKind::Unknown => "Unknown",
         }
@@ -122,6 +144,9 @@ impl SampleKind {
             "Pe64" => SampleKind::Pe64,
             "Elf32" => SampleKind::Elf32,
             "Elf64" => SampleKind::Elf64,
+            "MachO32" => SampleKind::MachO32,
+            "MachO64" => SampleKind::MachO64,
+            "MachOFat" => SampleKind::MachOFat,
             "Shellcode" => SampleKind::Shellcode,
             _ => SampleKind::Unknown,
         }
@@ -189,6 +214,31 @@ mod tests {
     fn detect_elf64() {
         let buf = [0x7F, b'E', b'L', b'F', 2, 0, 0, 0];
         assert_eq!(SampleKind::detect(&buf), SampleKind::Elf64);
+    }
+
+    #[test]
+    fn detect_macho_thin_fat_and_not_java() {
+        let mut thin = vec![0u8; 32];
+        thin[..4].copy_from_slice(&[0xCF, 0xFA, 0xED, 0xFE]);
+        assert_eq!(SampleKind::detect(&thin), SampleKind::MachO64);
+        thin[..4].copy_from_slice(&[0xCE, 0xFA, 0xED, 0xFE]);
+        assert_eq!(SampleKind::detect(&thin), SampleKind::MachO32);
+
+        let mut fat = vec![0u8; 32];
+        fat[..8].copy_from_slice(&[0xCA, 0xFE, 0xBA, 0xBE, 0, 0, 0, 2]);
+        assert_eq!(SampleKind::detect(&fat), SampleKind::MachOFat);
+
+        // A Java class file (major version 52 = Java 8) shares the magic.
+        let java = [0xCA, 0xFE, 0xBA, 0xBE, 0, 0, 0, 52];
+        assert_eq!(SampleKind::detect(&java), SampleKind::Unknown);
+
+        for k in [
+            SampleKind::MachO32,
+            SampleKind::MachO64,
+            SampleKind::MachOFat,
+        ] {
+            assert_eq!(SampleKind::from_str_lenient(k.as_str()), k);
+        }
     }
 
     #[test]
