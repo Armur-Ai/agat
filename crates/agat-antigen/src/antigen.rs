@@ -33,7 +33,7 @@ use std::collections::{BTreeSet, HashMap};
 /// Tuning for antigen construction. The per-group weights scale each
 /// sub-vector's contribution to the cosine metric, so they are the
 /// honest, explicit "what matters" knobs of the representation.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AntigenConfig {
     /// Number of buckets the canonical-block tokens are feature-hashed
     /// into for the signature vector. (The raw token set is also kept
@@ -58,6 +58,37 @@ impl Default for AntigenConfig {
             w_style: 1.0,
             w_imports: 1.0,
         }
+    }
+}
+
+/// Version of the signature *layout*: which features land in which
+/// dimension and how they are scaled. Bump it whenever antigen
+/// construction changes in a way that moves existing signatures, so
+/// trained models built under the old layout are recognized as
+/// incompatible instead of being silently misapplied.
+pub const ANTIGEN_LAYOUT_VERSION: u32 = 1;
+
+impl AntigenConfig {
+    /// A stable identifier of the metric space this config produces:
+    /// SHA-256 over the layout version, the weights, and the dimension
+    /// labels. A trained model (self-model, repertoire, memory) is only
+    /// meaningful against antigens with the same fingerprint.
+    pub fn fingerprint(&self) -> String {
+        use sha2::{Digest, Sha256};
+        let canonical = format!(
+            "agat.antigen/v{ANTIGEN_LAYOUT_VERSION}|block_dims={}|w={:?}|labels={}",
+            self.block_dims,
+            [
+                self.w_opcode,
+                self.w_block,
+                self.w_struct,
+                self.w_entropy,
+                self.w_style,
+                self.w_imports
+            ],
+            signature_labels(self).join(",")
+        );
+        hex::encode(Sha256::digest(canonical.as_bytes()))
     }
 }
 
@@ -336,4 +367,39 @@ fn fnv1a(bytes: &[u8]) -> u64 {
         h = h.wrapping_mul(0x100000001b3);
     }
     h
+}
+
+#[cfg(test)]
+mod fingerprint_tests {
+    use super::*;
+
+    #[test]
+    fn fingerprint_is_stable_and_sensitive_to_the_metric() {
+        let base = AntigenConfig::default();
+        assert_eq!(base.fingerprint(), AntigenConfig::default().fingerprint());
+        assert_eq!(base.fingerprint().len(), 64);
+
+        let reweighted = AntigenConfig {
+            w_entropy: 2.0,
+            ..base
+        };
+        assert_ne!(base.fingerprint(), reweighted.fingerprint());
+
+        let resized = AntigenConfig {
+            block_dims: 32,
+            ..base
+        };
+        assert_ne!(base.fingerprint(), resized.fingerprint());
+    }
+
+    #[test]
+    fn config_round_trips_through_json() {
+        let cfg = AntigenConfig {
+            w_style: 0.5,
+            ..AntigenConfig::default()
+        };
+        let back: AntigenConfig =
+            serde_json::from_str(&serde_json::to_string(&cfg).unwrap()).unwrap();
+        assert_eq!(cfg, back);
+    }
 }
