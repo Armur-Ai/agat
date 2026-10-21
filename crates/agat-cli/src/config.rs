@@ -17,6 +17,9 @@
 //!
 //! [denylist]
 //! sha256 = ["<64 hex>"]  # always reported malicious (wins over allowlist)
+//!
+//! [packs]
+//! trusted_keys = ["/etc/agat/acme-secops.pub"]  # signers whose packs import accepts
 //! ```
 
 use agat_core::Severity;
@@ -76,6 +79,15 @@ pub struct Config {
     pub danger: DangerSection,
     pub allowlist: HashList,
     pub denylist: HashList,
+    pub packs: PacksSection,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct PacksSection {
+    /// Public keys (paths) whose signed model packs `repertoire import`
+    /// accepts, in addition to `<home>/trusted_keys/*.pub`.
+    pub trusted_keys: Vec<std::path::PathBuf>,
 }
 
 #[derive(Debug, Default, Deserialize)]

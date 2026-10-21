@@ -70,6 +70,8 @@ pub fn cmd_self_build(inputs: Vec<String>, k: usize, store: &Store) -> Result<()
     let labelled: Vec<(&str, &Antigen)> = owned.iter().map(|(id, a)| (id.as_str(), a)).collect();
     let model = SelfModel::build(&labelled, k);
     store.put_self_model(SLOT, &serde_json::to_string(&model)?)?;
+    // Retrained locally: the model is no longer the pack that was imported.
+    store.clear_pack_info(SLOT)?;
 
     println!(
         "built self-model: {} benign antigen{} · dim {} · k {} · mean self-radius {:.3}",
@@ -110,6 +112,8 @@ pub fn cmd_repertoire_generate(
 
     let repertoire = generate_repertoire(&self_model, self_model.dim, &cfg);
     store.put_repertoire(SLOT, &serde_json::to_string(&repertoire)?)?;
+    // Retrained locally: the model is no longer the pack that was imported.
+    store.clear_pack_info(SLOT)?;
 
     let (naive, matured) = repertoire.composition();
     println!(
@@ -149,6 +153,8 @@ pub fn cmd_mature(input: String, family: String, store: &Store) -> Result<()> {
     let cfg = agat_immune::ClonalConfig::default();
     let m = mature(&antigen, &family, &mut memory, repertoire.as_ref(), &cfg);
     store.put_memory(SLOT, &serde_json::to_string(&memory)?)?;
+    // Retrained locally: the model is no longer the pack that was imported.
+    store.clear_pack_info(SLOT)?;
 
     println!("clonal selection on {} → family '{}'", id.short(), m.family);
     println!(

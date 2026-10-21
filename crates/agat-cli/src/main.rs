@@ -2,6 +2,7 @@
 
 mod config;
 mod immune;
+mod packs;
 
 use agat_ai::AiFeatures;
 use agat_core::{AnalysisContext, Sample, SampleId, SampleKind, SampleMetadata, Vault};
@@ -116,8 +117,25 @@ enum Cmd {
         #[command(flatten)]
         out: OutputArgs,
     },
+    /// Signing keys for model packs.
+    Key {
+        #[command(subcommand)]
+        cmd: KeyCmd,
+    },
     /// Launch the interactive TUI.
     Tui,
+}
+
+#[derive(Subcommand)]
+enum KeyCmd {
+    /// Generate an Ed25519 signing key: writes <PREFIX>.key (secret, 0600)
+    /// and <PREFIX>.pub (share it with whoever imports your packs).
+    Generate {
+        prefix: PathBuf,
+        /// A label stored in the public key file, e.g. "acme-secops".
+        #[arg(long)]
+        comment: Option<String>,
+    },
 }
 
 /// Output and exit-code flags shared by `scan` and `recognize`. Each
@@ -187,6 +205,43 @@ enum RepertoireCmd {
         #[arg(long)]
         seed: Option<u64>,
     },
+    /// Export the active model (self-model, repertoire, memory) as a
+    /// signed pack file, to deploy on other machines.
+    Export {
+        /// Output file, e.g. acme-2026.10.agatpack.
+        out: PathBuf,
+        /// Pack name.
+        #[arg(long)]
+        name: String,
+        /// Pack version.
+        #[arg(long, default_value = "1")]
+        version: String,
+        /// One-line description shown on import.
+        #[arg(long)]
+        description: Option<String>,
+        /// Signing key from `agat key generate`.
+        #[arg(long, conflicts_with = "unsigned")]
+        sign: Option<PathBuf>,
+        /// Export without a signature (importers must pass --allow-unsigned).
+        #[arg(long)]
+        unsigned: bool,
+    },
+    /// Verify a pack and install it as the active model.
+    Import {
+        pack: PathBuf,
+        /// Trust this public key (repeatable). Keys in <home>/trusted_keys/
+        /// and `[packs] trusted_keys` in the config are trusted too.
+        #[arg(long)]
+        trust: Vec<PathBuf>,
+        /// Accept an unsigned pack.
+        #[arg(long)]
+        allow_unsigned: bool,
+        /// Verify and describe the pack without installing it.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Describe the active model and where it came from.
+    Info,
 }
 
 fn main() -> Result<()> {
@@ -254,6 +309,46 @@ fn main() -> Result<()> {
                 coverage,
                 seed,
             } => immune::cmd_repertoire_generate(max_detectors, tolerance, coverage, seed, &store),
+            RepertoireCmd::Export {
+                out,
+                name,
+                version,
+                description,
+                sign,
+                unsigned,
+            } => packs::cmd_export(
+                packs::ExportArgs {
+                    out: &out,
+                    name: &name,
+                    version: &version,
+                    description,
+                    sign: sign.as_deref(),
+                    unsigned,
+                },
+                &store,
+            ),
+            RepertoireCmd::Import {
+                pack,
+                trust,
+                allow_unsigned,
+                dry_run,
+            } => packs::cmd_import(
+                packs::ImportArgs {
+                    pack: &pack,
+                    trust: &trust,
+                    allow_unsigned,
+                    dry_run,
+                },
+                &cfg.packs.trusted_keys,
+                &agat_home,
+                &store,
+            ),
+            RepertoireCmd::Info => packs::cmd_info(&store),
+        },
+        Cmd::Key { cmd } => match cmd {
+            KeyCmd::Generate { prefix, comment } => {
+                packs::cmd_key_generate(&prefix, comment.as_deref())
+            }
         },
         Cmd::Mature { id, family } => immune::cmd_mature(id, family, &store),
         Cmd::Recognize { id, out } => {
