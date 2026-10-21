@@ -536,6 +536,22 @@ fn draw(f: &mut Frame, app: &App) {
     let mut state = app.list_state.clone();
     f.render_stateful_widget(list, body[0], &mut state);
 
+    // Empty store: a logo splash instead of tabs.
+    if app.samples.is_empty() {
+        draw_empty_state(f, body[1]);
+        let key = |k: &str| {
+            Span::styled(
+                format!(" {k} "),
+                Style::default().fg(Color::Black).bg(Color::Gray),
+            )
+        };
+        f.render_widget(
+            Paragraph::new(Line::from(vec![key("q"), Span::raw(" quit ")])),
+            chunks[2],
+        );
+        return;
+    }
+
     // Right pane: tabs + content
     let right_chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -632,6 +648,59 @@ fn draw(f: &mut Frame, app: &App) {
     if app.show_help {
         draw_help(f);
     }
+}
+
+/// Centered logo + hint shown when the sample library is empty.
+fn draw_empty_state(f: &mut Frame, area: ratatui::layout::Rect) {
+    const LOGO: [&str; 6] = [
+        "  █████╗  ██████╗  █████╗ ████████╗",
+        " ██╔══██╗██╔════╝ ██╔══██╗╚══██╔══╝",
+        " ███████║██║  ███╗███████║   ██║   ",
+        " ██╔══██║██║   ██║██╔══██║   ██║   ",
+        " ██║  ██║╚██████╔╝██║  ██║   ██║   ",
+        " ╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝   ╚═╝   ",
+    ];
+    let grad = [
+        Color::Cyan,
+        Color::Cyan,
+        Color::LightBlue,
+        Color::LightMagenta,
+        Color::Magenta,
+        Color::Magenta,
+    ];
+    let mut lines: Vec<Line> = vec![Line::from(""), Line::from("")];
+    for (row, col) in LOGO.iter().zip(grad) {
+        lines.push(Line::from(Span::styled(*row, Style::default().fg(col))).centered());
+    }
+    lines.push(Line::from(""));
+    lines.push(
+        Line::from(Span::styled(
+            "an adaptive immune system for binaries",
+            Style::default()
+                .fg(Color::LightBlue)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .centered(),
+    );
+    lines.push(Line::from(""));
+    lines.push(
+        Line::from(Span::styled(
+            "no samples in this agat home yet",
+            Style::default().fg(Color::DarkGray),
+        ))
+        .centered(),
+    );
+    lines.push(
+        Line::from(Span::styled(
+            "agat ingest <files…>   then   agat analyze",
+            Style::default().fg(Color::Gray),
+        ))
+        .centered(),
+    );
+    f.render_widget(
+        Paragraph::new(lines).block(Block::default().borders(Borders::ALL)),
+        area,
+    );
 }
 
 /// A centered help overlay listing every key binding.
@@ -1639,6 +1708,17 @@ mod tests {
         app.clamp_selection();
         assert!(app.visible().is_empty());
         assert_eq!(app.list_state.selected(), None);
+    }
+
+    #[test]
+    fn empty_store_shows_the_logo_splash() {
+        let app = app_with(vec![], vec![], false);
+        let screen = render(&app);
+        assert!(
+            screen.contains("no samples in this agat home yet"),
+            "{screen}"
+        );
+        assert!(screen.contains("agat ingest"), "{screen}");
     }
 
     #[test]
