@@ -107,7 +107,7 @@ pub fn recognize(
     let recognized = bound_count > 0;
     let from_memory = best_family
         .as_ref()
-        .map_or(false, |m| m.origin == DetectorOrigin::Memory);
+        .is_some_and(|m| m.origin == DetectorOrigin::Memory);
     let family = best_family.as_ref().and_then(|m| m.family.clone());
     let self_surface_distance = self_model.and_then(|sm| sm.surface_distance(sig));
 

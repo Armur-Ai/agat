@@ -164,7 +164,7 @@ mod tests {
     #[test]
     fn benign_cluster_is_self_decryptor_is_not() {
         // A tight cluster of benign behavioral signatures near (0,0).
-        let benign = vec![
+        let benign = [
             ag(&[0.10, 0.10]),
             ag(&[0.12, 0.09]),
             ag(&[0.08, 0.11]),
@@ -191,7 +191,7 @@ mod tests {
 
     #[test]
     fn tolerance_widens_the_self_region() {
-        let benign = vec![ag(&[0.0, 0.0]), ag(&[0.1, 0.0]), ag(&[0.0, 0.1])];
+        let benign = [ag(&[0.0, 0.0]), ag(&[0.1, 0.0]), ag(&[0.0, 0.1])];
         let labelled: Vec<(String, &Antigen)> = benign
             .iter()
             .enumerate()
@@ -207,7 +207,7 @@ mod tests {
 
     #[test]
     fn serializes_round_trip() {
-        let benign = vec![ag(&[0.1, 0.2]), ag(&[0.2, 0.1])];
+        let benign = [ag(&[0.1, 0.2]), ag(&[0.2, 0.1])];
         let labelled: Vec<(String, &Antigen)> = benign
             .iter()
             .enumerate()

@@ -777,7 +777,7 @@ fn cmd_divergence(store: &Store) -> Result<()> {
     }
 
     let mut groups_vec: Vec<(String, Vec<&Row>)> = groups.into_iter().collect();
-    groups_vec.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
+    groups_vec.sort_by_key(|g| std::cmp::Reverse(g.1.len()));
 
     let mut any_divergence = false;
     for (pfp, members) in &groups_vec {
@@ -868,7 +868,7 @@ fn cmd_cluster(store: &Store) -> Result<()> {
         unfingerprinted.push(s);
     }
     let mut sorted: Vec<(String, Vec<StoredSample>)> = clusters.into_iter().collect();
-    sorted.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
+    sorted.sort_by_key(|c| std::cmp::Reverse(c.1.len()));
 
     for (fp, members) in &sorted {
         let label = if members.len() == 1 {
@@ -1313,7 +1313,7 @@ fn entropy_sparkline(curve: &EntropyCurve, width: usize) -> String {
             .map(|p| p.entropy)
             .sum::<f64>()
             / (end - start) as f64;
-        let idx = (avg.max(0.0).min(8.0) * (BLOCKS.len() as f64 - 1.0) / 8.0).round() as usize;
+        let idx = (avg.clamp(0.0, 8.0) * (BLOCKS.len() as f64 - 1.0) / 8.0).round() as usize;
         out.push(BLOCKS[idx.min(BLOCKS.len() - 1)]);
     }
     out

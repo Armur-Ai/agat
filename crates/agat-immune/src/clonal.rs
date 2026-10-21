@@ -336,8 +336,10 @@ mod tests {
 
     #[test]
     fn capacity_is_bounded_per_family() {
-        let mut cfg = ClonalConfig::default();
-        cfg.max_memory_per_family = 1;
+        let cfg = ClonalConfig {
+            max_memory_per_family: 1,
+            ..ClonalConfig::default()
+        };
         let mut memory = MemoryPool::new(2);
         // Two distant "sub-clusters" of the same family; with cap 1 only
         // one cell survives (the search keeps merging into the nearest).

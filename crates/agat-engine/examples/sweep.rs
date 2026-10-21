@@ -206,12 +206,12 @@ fn main() -> Result<()> {
     let mut runs = vec![];
 
     // One weight at a time, halved and doubled.
-    for i in 0..WEIGHTS.len() {
+    for (i, weight) in WEIGHTS.iter().enumerate() {
         for factor in [0.5, 2.0] {
             let mut cfg = base_cfg;
             set(&mut cfg, i, get(&base_cfg, i) * factor);
             runs.push(evaluate(
-                format!("{} x{factor}", WEIGHTS[i]),
+                format!("{weight} x{factor}"),
                 &cfg,
                 &c,
                 Some(&base.severities),
