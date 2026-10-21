@@ -13,6 +13,7 @@
 #
 # Usage:
 #   bench/fetch-benign.sh [OUT_DIR] [--image debian:12-slim]
+#   bench/fetch-benign.sh --arch arm64            # aarch64 ELFs → bench/corpus/debian-arm64-bin
 #   bench/fetch-benign.sh --macos [OUT_DIR]
 #   bench/run.sh --benign-dir bench/corpus/debian-bin
 #
@@ -24,11 +25,13 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT=""
 IMAGE="debian:12-slim"
+ARCH="amd64"
 MACOS=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --image) IMAGE="$2"; shift 2 ;;
     --macos) MACOS=1; shift ;;
+    --arch)  ARCH="$2"; shift 2 ;;
     -h|--help) grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) OUT="$1"; shift ;;
   esac
@@ -48,20 +51,25 @@ if [[ "$MACOS" -eq 1 ]]; then
   echo "copied $n Mach-O binaries with an x86-64 slice into $OUT"
   exit 0
 fi
-OUT="${OUT:-$REPO_ROOT/bench/corpus/debian-bin}"
+case "$ARCH" in
+  amd64) PATTERN="ELF 64-bit LSB.*x86-64"; DEFAULT_OUT="$REPO_ROOT/bench/corpus/debian-bin" ;;
+  arm64) PATTERN="ELF 64-bit LSB.*(ARM aarch64|aarch64)"; DEFAULT_OUT="$REPO_ROOT/bench/corpus/debian-arm64-bin" ;;
+  *) echo "--arch must be amd64 or arm64" >&2; exit 2 ;;
+esac
+OUT="${OUT:-$DEFAULT_OUT}"
 
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"; [[ -n "${CID:-}" ]] && docker rm "$CID" >/dev/null 2>&1 || true' EXIT
 
-CID="$(docker create --platform linux/amd64 "$IMAGE")"
+CID="$(docker create --platform "linux/$ARCH" "$IMAGE")"
 docker cp "$CID:/usr/bin" - | tar -x -C "$STAGE"
 
 mkdir -p "$OUT"
 n=0
 for f in "$STAGE"/bin/*; do
   [[ -f "$f" && ! -L "$f" ]] || continue
-  if file "$f" | grep -q "ELF 64-bit LSB.*x86-64"; then
+  if file "$f" | grep -Eq "$PATTERN"; then
     cp "$f" "$OUT/"; n=$((n + 1))
   fi
 done
-echo "extracted $n x86-64 ELF binaries from $IMAGE into $OUT"
+echo "extracted $n $ARCH ELF binaries from $IMAGE into $OUT"
