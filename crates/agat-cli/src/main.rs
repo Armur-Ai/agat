@@ -415,7 +415,10 @@ fn cmd_scan(
         };
         results.push(result);
     }
-    eprintln!("scanned {} file(s)", results.len());
+    // The table prints its own tally; elsewhere note batch size on stderr.
+    if !single && format != immune::OutputFormat::Table {
+        eprintln!("scanned {} file(s)", results.len());
+    }
 
     match format {
         immune::OutputFormat::Sarif => {
