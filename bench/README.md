@@ -11,6 +11,7 @@ with `python3` and the agat workspace.
 | `keys.sh` | register-held and multi-byte decryptor keys are recovered *exactly*, and never "recovered" from benign data |
 | `substitute.sh` | variants that swap instructions for equivalents collapse to one fingerprint and are recognized unseen |
 | `evaluate.sh` | agat on a **labeled corpus you supply** (real families): detection, attribution, confusion, benign FP — ships no samples |
+| `throughput.sh` | scan throughput (files/s) and parallel speedup across worker counts |
 | `fetch-benign.sh` | builds the real benign corpus `run.sh` and `sweep.sh` measure FPs on |
 
 ## `run.sh` — detection and false-positive rates
