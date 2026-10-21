@@ -64,6 +64,20 @@ detection is gated.
     family swallowed  7/8
 ```
 
+### Second corpus: macOS (Mach-O)
+
+`bench/fetch-benign.sh --macos` copies the local system binaries that carry
+an x86-64 slice (896 on a current macOS install; no network). Same split,
+same gate:
+
+```
+  detected (non-self + family)   8/8  = 100.0%
+  [real benign, held out] n=448
+    any non-clean     7/448  = 1.6%
+    malicious         0/448  = 0.0%
+    family swallowed  0/448
+```
+
 ### Honest notes on `run.sh`
 
 - **The self-model must be trained on benign software like the software
@@ -157,7 +171,19 @@ every non-executable section of every benign binary in `DIR`:
 220 files · 5388 non-executable sections · 16164 solve attempts · 0 keys accepted
 ```
 
-That zero was earned. The first acceptance rule accepted 5,537 keys here,
+On this Mac's own 896 system binaries (`bench/fetch-benign.sh --macos`, the
+x86-64 slices of universal Mach-O files):
+
+```
+896 files · 7842 non-executable sections · 23526 solve attempts · 4 keys accepted
+```
+
+Those 4 (0.017%) are record-structured `__TEXT,__const` tables where a
+"key" one record long turns the other records into letter-range gibberish.
+They are reported, not hidden; in the analyzer the solver only runs when a
+decryptor loop was found, and the full macOS FP benchmark below is clean.
+
+That zero on Debian was earned. The first acceptance rule accepted 5,537 keys here,
 by turning zero-filled tables into "text" made of spaces, then small-integer
 tables into letter-range gibberish. The fixes (word-like text only, and
 declining windows over 5% zero bytes, since true ciphertext measured ≤1.8%)
