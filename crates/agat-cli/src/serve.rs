@@ -15,6 +15,7 @@
 //!   the body and the `X-Agat-Severity` header), `413` over the size limit,
 //!   `400` for an empty body, `500` if analysis fails.
 //! - `GET /v1/model`: the active model's provenance (`ModelRef`).
+//! - `GET /v1/schema`: the JSON Schema of a scan result (`agat.scan/v1`).
 //! - `GET /healthz`: liveness, with the agat version and model.
 
 use std::net::SocketAddr;
@@ -42,6 +43,7 @@ pub fn router(model: ImmuneModel, max_bytes: usize) -> Router {
     Router::new()
         .route("/v1/scan", post(scan))
         .route("/v1/model", get(model_info))
+        .route("/v1/schema", get(schema))
         .route("/healthz", get(healthz))
         .layer(DefaultBodyLimit::max(max_bytes))
         .with_state(AppState {
@@ -103,6 +105,10 @@ async fn scan(State(state): State<AppState>, Query(q): Query<ScanQuery>, body: B
 
 async fn model_info(State(state): State<AppState>) -> Response {
     Json(state.model.model_ref()).into_response()
+}
+
+async fn schema() -> Response {
+    Json(agat_core::scan_result_schema()).into_response()
 }
 
 async fn healthz(State(state): State<AppState>) -> Response {
@@ -289,6 +295,18 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["antigen_fingerprint"].as_str().unwrap().len(), 64);
+    }
+
+    #[tokio::test]
+    async fn serves_the_scan_result_schema() {
+        let (status, _, body) = call(
+            router(model(), 1024),
+            Request::get("/v1/schema").body(Body::empty()).unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["title"], "ScanResult");
+        assert_eq!(body, agat_core::scan_result_schema());
     }
 
     #[test]

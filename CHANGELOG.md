@@ -21,7 +21,7 @@ The release that turns the research engine into a deployable product.
 - `config.toml`: default output and fail threshold, danger thresholds, and
   sha256 allow/deny lists (overrides are marked in `verdict.policy`).
 - `agat serve`: local HTTP API (`POST /v1/scan`, `GET /v1/model`,
-  `GET /healthz`) with an `X-Agat-Severity` header; loopback-only unless
+  `GET /v1/schema`, `GET /healthz`) with an `X-Agat-Severity` header; loopback-only unless
   `--allow-remote`.
 - `agat completions <shell>`, `agat man`, and a workflow-ordered `--help`.
 - A JSON Schema for `agat.scan/v1` (`docs/schema/agat.scan.v1.json`,

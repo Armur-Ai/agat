@@ -256,6 +256,7 @@ agat serve                                   # http://127.0.0.1:8080, model load
 curl --data-binary @invoice.exe 'localhost:8080/v1/scan?name=invoice.exe'   # → ScanResult JSON
 curl --data-binary @invoice.exe 'localhost:8080/v1/scan?format=sarif'       # → SARIF
 curl localhost:8080/v1/model                 # which signed pack is answering
+curl localhost:8080/v1/schema                # the agat.scan/v1 JSON Schema
 ```
 
 Every verdict is a `200` with the severity in the body and in an
