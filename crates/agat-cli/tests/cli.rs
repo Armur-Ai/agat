@@ -214,6 +214,35 @@ fn stateless_scan_contract() {
 }
 
 #[test]
+fn scans_a_sample_from_stdin() {
+    let env = Env::new();
+    env.train();
+    let bytes = std::fs::read(AGAT).unwrap(); // the agat binary itself as a sample
+    let out = Command::new(AGAT)
+        .arg("--home")
+        .arg(env.path("home"))
+        .args(["scan", "-", "--json", "--fail-on", "never"])
+        .env_remove("AGAT_VAULT_PASSWORD")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .and_then(|mut c| {
+            use std::io::Write;
+            c.stdin
+                .take()
+                .unwrap()
+                .write_all(&bytes[..bytes.len().min(200_000)])
+                .unwrap();
+            c.wait_with_output()
+        })
+        .unwrap();
+    ok(&out);
+    let r: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(r["sample"]["name"], "<stdin>");
+    assert!(r["verdict"]["severity"].is_string());
+}
+
+#[test]
 fn diff_compares_two_analyzed_samples() {
     let env = Env::new();
     // Two ingested, analyzed files; no model needed for diff.

@@ -161,6 +161,12 @@ features), pass `--ingest` (this needs the vault password):
 agat scan ./new-sample.bin --ingest
 ```
 
+Read a single sample from **stdin** with `-` (handy in pipelines):
+
+```bash
+curl -s https://host/suspect.bin | agat scan - --json
+```
+
 `agat recognize <sample-id>` produces the same report for a sample already
 in the library.
 

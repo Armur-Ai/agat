@@ -644,6 +644,29 @@ fn cmd_scan(
     vault: Option<&Vault>,
     store: &Store,
 ) -> Result<agat_core::Severity> {
+    // `agat scan -` reads one sample from stdin (pipeline use). It can't be
+    // combined with --ingest (there's no file to ingest) or other paths.
+    if paths.iter().any(|p| p.as_os_str() == "-") {
+        if paths.len() != 1 {
+            anyhow::bail!("`-` (stdin) cannot be combined with other paths");
+        }
+        if vault.is_some() {
+            anyhow::bail!("`-` (stdin) cannot be used with --ingest");
+        }
+        use std::io::Read;
+        let mut bytes = Vec::new();
+        std::io::stdin()
+            .read_to_end(&mut bytes)
+            .context("reading sample from stdin")?;
+        if bytes.is_empty() {
+            anyhow::bail!("empty input on stdin");
+        }
+        let model = agat_engine::ImmuneModel::load(store)?.with_policy(policy);
+        let result = model.scan_bytes(&bytes, Some("<stdin>".into()))?;
+        render_scan(std::slice::from_ref(&result), true, format);
+        return Ok(result.severity());
+    }
+
     let mut files = Vec::new();
     for p in paths {
         files.extend(collect_files(p)?);
@@ -716,18 +739,36 @@ fn cmd_scan(
         eprintln!("scanned {} file(s)", results.len());
     }
 
+    render_scan(&results, single, format);
+
+    // Worst severity across the batch drives the exit code.
+    Ok(results
+        .iter()
+        .map(|r| r.severity())
+        .max()
+        .unwrap_or(agat_core::Severity::Clean))
+}
+
+/// Render scan results in the chosen format. `single` selects a JSON object
+/// vs an array. Serialization of the result is infallible here, so any
+/// error is a bug; we fall back to a note rather than failing the scan.
+fn render_scan(results: &[ScanResult], single: bool, format: immune::OutputFormat) {
     match format {
         immune::OutputFormat::Sarif => {
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&agat_engine::sarif::to_sarif(&results))?
-            );
+            match serde_json::to_string_pretty(&agat_engine::sarif::to_sarif(results)) {
+                Ok(s) => println!("{s}"),
+                Err(e) => eprintln!("error rendering SARIF: {e}"),
+            }
         }
         immune::OutputFormat::Json => {
-            if single {
-                println!("{}", serde_json::to_string_pretty(&results[0])?);
+            let value: serde_json::Result<String> = if single {
+                serde_json::to_string_pretty(&results[0])
             } else {
-                println!("{}", serde_json::to_string_pretty(&results)?);
+                serde_json::to_string_pretty(results)
+            };
+            match value {
+                Ok(s) => println!("{s}"),
+                Err(e) => eprintln!("error rendering JSON: {e}"),
             }
         }
         immune::OutputFormat::Text => {
@@ -738,15 +779,8 @@ fn cmd_scan(
                 immune::print_report(r);
             }
         }
-        immune::OutputFormat::Table => immune::print_table(&results),
+        immune::OutputFormat::Table => immune::print_table(results),
     }
-
-    // Worst severity across the batch drives the exit code.
-    Ok(results
-        .iter()
-        .map(|r| r.severity())
-        .max()
-        .unwrap_or(agat_core::Severity::Clean))
 }
 
 fn cmd_ingest(paths: Vec<PathBuf>, vault: &Vault, store: &Store) -> Result<()> {
@@ -1092,7 +1126,11 @@ fn cmd_divergence(store: &Store) -> Result<()> {
             "\n{} {} {}",
             st.bold(&st.fg(style::palette::CYAN, "plaintext family")),
             st.fg(style::palette::CYAN, &pfp[..pfp.len().min(16)]),
-            st.dim(&format!("({} samples · {} distinct CFG)", members.len(), meta_fps.len())),
+            st.dim(&format!(
+                "({} samples · {} distinct CFG)",
+                members.len(),
+                meta_fps.len()
+            )),
         );
         // Determine the "majority" CFG fingerprint — the one most
         // samples in this family share. Divergent samples are those
@@ -1131,7 +1169,11 @@ fn cmd_divergence(store: &Store) -> Result<()> {
                     .unwrap_or("-"),
             );
             if is_divergent {
-                println!("{}  {}", st.fg(style::palette::RED, &line), st.fg(style::palette::RED, "← divergent"));
+                println!(
+                    "{}  {}",
+                    st.fg(style::palette::RED, &line),
+                    st.fg(style::palette::RED, "← divergent")
+                );
             } else {
                 println!("  {}", st.dim(&line));
             }
