@@ -793,12 +793,14 @@ fn cmd_ingest(paths: Vec<PathBuf>, vault: &Vault, store: &Store) -> Result<()> {
             let (size, kind) = stored
                 .map(|s| (s.sample.size, s.sample.kind))
                 .unwrap_or((0, SampleKind::Unknown));
+            let st = style::Style::new(style::use_color());
             println!(
-                "ingested  {}  {:>10}B  {:<10}  {}",
-                id.short(),
+                "{} {}  {:>10}B  {:<10}  {}",
+                st.fg(style::palette::GREEN, "✓"),
+                st.fg(style::palette::YELLOW, &id.short()),
                 size,
                 kind,
-                path.display()
+                st.dim(&path.display().to_string())
             );
             ingested += 1;
         } else {
@@ -909,9 +911,11 @@ fn run_analyzers(
             .insert(analyzer.name().to_string(), bundle.features.clone());
         store.insert_features(id, &bundle)?;
         if !quiet {
+            let st = style::Style::new(style::use_color());
             println!(
-                "analyzed  {}  {} v{}",
-                id.short(),
+                "{} {}  {} v{}",
+                st.fg(style::palette::GREEN, "✓"),
+                st.fg(style::palette::YELLOW, &id.short()),
                 analyzer.name(),
                 analyzer.version()
             );
