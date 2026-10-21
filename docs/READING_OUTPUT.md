@@ -137,7 +137,9 @@ SARIF emits one result per non-clean file. `ruleId` is
 
 - **Coverage**: x86/x64 PE/ELF only. Other architectures get static
   analysis but no structural (CFG) comparison, so recognition is weaker.
-  Single-byte XOR/ADD/SUB decryptors only. No dynamic analysis.
+  Key recovery covers repeating XOR/ADD/SUB keys (up to 16 bytes, from an
+  immediate operand or solved from the ciphertext), not keystream ciphers.
+  No dynamic analysis.
 - **Self is your baseline.** A self-model trained on a few samples flags
   ordinary software as non-self. Train it on benign software like what
   you scan (see `bench/README.md`).
