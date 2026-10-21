@@ -1,0 +1,19 @@
+# Normalize line endings for text; treat binaries and generated assets
+# as binary so diffs stay sane and GitHub's language stats are accurate.
+
+* text=auto eol=lf
+
+*.rs    text
+*.toml  text
+*.md    text
+*.sh    text eol=lf
+*.py    text
+
+# Generated/binary assets — no text diffs, excluded from language stats.
+*.gif   binary linguist-generated
+*.png   binary linguist-generated
+*.svg   linguist-generated
+Cargo.lock linguist-generated
+
+# Benchmark corpora are never committed (see .gitignore), but guard anyway.
+bench/corpus/** binary
