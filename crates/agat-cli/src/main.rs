@@ -3,6 +3,7 @@
 mod config;
 mod immune;
 mod packs;
+mod serve;
 
 use agat_ai::AiFeatures;
 use agat_core::{AnalysisContext, Sample, SampleId, SampleKind, SampleMetadata, Vault};
@@ -79,6 +80,24 @@ enum Cmd {
         id: String,
         #[command(flatten)]
         out: OutputArgs,
+    },
+    /// Serve scans over local HTTP (POST /v1/scan) for SOAR and pipelines.
+    ///
+    /// Loads the active model once and answers `POST /v1/scan` (raw bytes
+    /// in, ScanResult JSON out; `?format=sarif`, `?name=`), `GET /v1/model`
+    /// and `GET /healthz`. Binds loopback by default; there is no built-in
+    /// authentication, so anything wider belongs behind a reverse proxy.
+    Serve {
+        /// Address to listen on.
+        #[arg(long, default_value = "127.0.0.1:8080")]
+        listen: std::net::SocketAddr,
+        /// Allow a non-loopback listen address (only behind an
+        /// authenticating reverse proxy).
+        #[arg(long)]
+        allow_remote: bool,
+        /// Largest accepted upload, in bytes.
+        #[arg(long, default_value_t = 64 * 1024 * 1024)]
+        max_bytes: usize,
     },
     /// Add files to the encrypted sample library (training input).
     Ingest {
@@ -417,6 +436,15 @@ fn main() -> Result<()> {
             let worst = cmd_scan(&paths, format, cfg.policy()?, vault.as_ref(), &store)?;
             drop(store);
             std::process::exit(fail_on.exit_code(worst));
+        }
+        Cmd::Serve {
+            listen,
+            allow_remote,
+            max_bytes,
+        } => {
+            let model = agat_engine::ImmuneModel::load(&store)?.with_policy(cfg.policy()?);
+            drop(store);
+            serve::run(model, listen, allow_remote, max_bytes)
         }
         Cmd::Completions { .. } | Cmd::Man => unreachable!("handled before opening the store"),
         Cmd::Tui => agat_tui::run(vault.expect("tui needs a vault"), store).context("running tui"),
