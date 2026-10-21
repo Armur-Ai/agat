@@ -4,11 +4,36 @@
 
 use agat_core::Severity;
 use std::io::IsTerminal;
+use std::sync::OnceLock;
 
-/// Emit color only when stdout is a terminal and `NO_COLOR` is unset
-/// (https://no-color.org).
+/// When to emit color, set once from `--color` (default `Auto`).
+#[derive(Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum ColorChoice {
+    /// Color when stdout is a terminal and `NO_COLOR` is unset.
+    Auto,
+    /// Always color.
+    Always,
+    /// Never color.
+    Never,
+}
+
+static CHOICE: OnceLock<ColorChoice> = OnceLock::new();
+
+/// Set the global color choice (call once, early). Later calls are no-ops.
+pub fn set_choice(c: ColorChoice) {
+    let _ = CHOICE.set(c);
+}
+
+/// Emit color per the `--color` choice, defaulting to auto: stdout is a
+/// terminal and `NO_COLOR` is unset (https://no-color.org).
 pub fn use_color() -> bool {
-    std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none()
+    match CHOICE.get().copied().unwrap_or(ColorChoice::Auto) {
+        ColorChoice::Always => true,
+        ColorChoice::Never => false,
+        ColorChoice::Auto => {
+            std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none()
+        }
+    }
 }
 
 /// Brand palette (24-bit RGB), the cyan → violet gradient of the logo.

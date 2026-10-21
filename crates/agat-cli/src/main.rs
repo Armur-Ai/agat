@@ -71,6 +71,10 @@ struct Cli {
     #[arg(long, global = true)]
     config: Option<PathBuf>,
 
+    /// When to colorize output.
+    #[arg(long, global = true, value_enum, default_value = "auto")]
+    color: style::ColorChoice,
+
     #[command(subcommand)]
     command: Option<Cmd>,
 }
@@ -356,6 +360,7 @@ fn main() -> Result<()> {
     }
 
     let cli = Cli::parse();
+    style::set_choice(cli.color);
 
     // No subcommand: show the splash and exit 0.
     let Some(command) = cli.command else {
