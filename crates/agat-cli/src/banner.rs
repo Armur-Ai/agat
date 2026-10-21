@@ -69,6 +69,7 @@ pub fn splash(color: bool) -> String {
         "analyze and recognize, stateless",
     ));
     out.push_str(&cmd("agat scan ./dir --output table", "one line per file"));
+    out.push_str(&cmd("… | agat scan -", "scan a sample from stdin"));
     out.push_str(&cmd("agat diff <a> <b>", "are two samples related?"));
     out.push('\n');
     out.push_str(&head("TRAIN"));
