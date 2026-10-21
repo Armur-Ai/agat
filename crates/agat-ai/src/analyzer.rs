@@ -10,7 +10,8 @@ use agat_static::StaticFeatures;
 
 const NAME: &str = "ai";
 // 0.2.0: deterministic opcode-diversity entropy (canonical summation order).
-const VERSION: &str = "0.2.0";
+// 0.3.0: expanded, case-insensitive AI-artifact rule set.
+const VERSION: &str = "0.3.0";
 
 pub struct AiAnalyzer;
 
