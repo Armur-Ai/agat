@@ -563,8 +563,8 @@ mod tests {
             vec![0],
             b"\x7fELF".to_vec(),
             b"MZ".to_vec(),
-            b"\xca\xfe\xba\xbe".to_vec(),   // fat Mach-O magic, nothing after
-            b"\xcf\xfa\xed\xfe".to_vec(),   // thin Mach-O magic, nothing after
+            b"\xca\xfe\xba\xbe".to_vec(), // fat Mach-O magic, nothing after
+            b"\xcf\xfa\xed\xfe".to_vec(), // thin Mach-O magic, nothing after
             vec![0xff; 64],
         ];
         // Structured-but-lying headers: the real parser crash vectors.
