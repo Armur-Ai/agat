@@ -48,10 +48,9 @@ pub fn try_recover(
         return None;
     }
     let original = &bytes[start..end];
-    let mut decrypted = original.to_vec();
-    for b in decrypted.iter_mut() {
-        *b = apply_inverse(*b, pattern.op, pattern.key);
-    }
+    // The detected instruction *is* the decryptor: run it forward
+    // (`add [mem], k` decrypts as c + k), as the stub itself would.
+    let decrypted = crate::solve::decrypt(original, pattern.op, &[pattern.key]);
     let original_entropy = shannon_entropy(original);
     let decrypted_entropy = shannon_entropy(&decrypted);
     let entropy_drop = original_entropy - decrypted_entropy;
@@ -129,16 +128,6 @@ fn locate_payload_region(sf: &StaticFeatures, file_size: usize) -> Option<(u64, 
     Some((start, end))
 }
 
-fn apply_inverse(byte: u8, op: Operation, key: u8) -> u8 {
-    match op {
-        Operation::Xor => byte ^ key,
-        // The forward op was ADD-with-key; inverse is SUB-with-key.
-        Operation::Add => byte.wrapping_sub(key),
-        // Forward was SUB-with-key; inverse is ADD-with-key.
-        Operation::Sub => byte.wrapping_add(key),
-    }
-}
-
 /// Crude success score in [0, 1]. String recovery is the dominant
 /// signal (single-byte XOR is entropy-preserving, so we can't lean
 /// on entropy drop as the primary indicator — but it does help for
@@ -167,6 +156,80 @@ mod tests {
     use agat_static::features::StringSummary;
     use agat_static::hashes::Hashes;
     use agat_static::parse::ParsedBinary;
+
+    /// Minimal StaticFeatures whose only high-entropy region covers `len`
+    /// bytes from offset 0.
+    fn features_over(len: usize) -> StaticFeatures {
+        StaticFeatures {
+            size: len as u64,
+            parsed: ParsedBinary {
+                format: agat_static::parse::BinaryFormat::Unknown,
+                arch: agat_static::parse::Arch::Other,
+                bits: 0,
+                entry_point: 0,
+                sections: vec![],
+                imports: vec![],
+                exports: vec![],
+            },
+            hashes: Hashes {
+                sha256: String::new(),
+                md5: String::new(),
+                imphash: None,
+            },
+            entropy: EntropyCurve {
+                window_size: 0,
+                step: 0,
+                overall: 0.0,
+                points: vec![],
+                high_entropy_regions: vec![HighEntropyRegion {
+                    start: 0,
+                    end: len as u64,
+                    mean_entropy: 7.5,
+                }],
+            },
+            strings: StringSummary {
+                min_len: 4,
+                ascii_count: 0,
+                utf16le_count: 0,
+                samples: vec![],
+            },
+        }
+    }
+
+    #[test]
+    fn add_and_sub_decryptors_run_forward() {
+        // A stub that decrypts with `add [mem], k` holds plain - k; one
+        // that decrypts with `sub [mem], k` holds plain + k.
+        let plain = b"/bin/sh\0Hello, world!\n";
+        for (op, cipher) in [
+            (
+                Operation::Add,
+                plain
+                    .iter()
+                    .map(|b| b.wrapping_sub(0x21))
+                    .collect::<Vec<u8>>(),
+            ),
+            (
+                Operation::Sub,
+                plain
+                    .iter()
+                    .map(|b| b.wrapping_add(0x21))
+                    .collect::<Vec<u8>>(),
+            ),
+        ] {
+            let pattern = DecryptorPattern {
+                op,
+                key: 0x21,
+                instruction_address: 0,
+            };
+            let rec = try_recover(pattern, &features_over(cipher.len()), &cipher).expect("recover");
+            assert!(
+                rec.recovered_strings.iter().any(|s| s.contains("Hello")),
+                "{op:?} recovered {:?}",
+                rec.recovered_strings
+            );
+        }
+    }
 
     #[test]
     fn recovers_known_xor_plaintext() {
