@@ -15,6 +15,7 @@ out of the noise). Use only for analyzing the analyzer.
 
 Usage:
     python3 tools/poly_gen.py [output_path] [--key 0x42]
+    python3 tools/poly_gen.py [output_path] --rolling-key de4dbeef   # register-held multi-byte key
 """
 import argparse
 import itertools
@@ -69,6 +70,39 @@ def build_decryptor(payload_vaddr: int, payload_len: int, key: int) -> bytes:
         + b"\x48\xff\xc6"
         + b"\xff\xc9"
         + b"\x75\xf6"
+        + b"\xf4"
+    )
+
+
+def build_rolling_decryptor(payload_vaddr: int, payload_len: int, key: bytes) -> bytes:
+    """x86_64 decryptor whose key lives in a register and rotates: a
+    repeating multi-byte XOR. No immediate key appears on the XOR, so a
+    static key read finds nothing; recovering it takes cryptanalysis.
+
+    mov  rsi, payload_vaddr           ; 48 BE ?? ?? ?? ?? ?? ?? ?? ??
+    mov  ecx, payload_len             ; B9 ?? ?? ?? ??
+    mov  rax, key64                   ; 48 B8 ?? ?? ?? ?? ?? ?? ?? ??
+    .loop:
+        xor  BYTE PTR [rsi], al       ; 30 06
+        ror  rax, 8                   ; 48 C1 C8 08
+        inc  rsi                      ; 48 FF C6
+        dec  ecx                      ; FF C9
+        jne  .loop                    ; 75 F3  (rel8 = -13)
+    hlt                               ; F4
+
+    `key` (1, 2, 4 or 8 bytes) is tiled to 8 bytes; byte i of the
+    payload is XORed with key[i % len(key)].
+    """
+    key64 = (key * (8 // len(key)))[:8]
+    return (
+        b"\x48\xbe" + struct.pack("<Q", payload_vaddr)
+        + b"\xb9" + struct.pack("<I", payload_len)
+        + b"\x48\xb8" + key64
+        + b"\x30\x06"
+        + b"\x48\xc1\xc8\x08"
+        + b"\x48\xff\xc6"
+        + b"\xff\xc9"
+        + b"\x75\xf3"
         + b"\xf4"
     )
 
@@ -147,20 +181,34 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("output", nargs="?", default="/tmp/poly_demo.bin")
     ap.add_argument("--key", default="0x42", help="single-byte XOR key (hex or decimal)")
+    ap.add_argument(
+        "--rolling-key",
+        help="multi-byte XOR key as hex (1, 2, 4 or 8 bytes, e.g. de4dbeef), held in "
+        "a register and rotated each byte instead of an immediate operand",
+    )
     ap.add_argument("--payload-size", type=int, default=512)
     ap.add_argument("--seed", type=int, default=1337)
     args = ap.parse_args()
 
-    key = int(args.key, 0)
-    if not 0 <= key <= 0xFF:
-        ap.error("key must be a single byte (0..255)")
-
     plaintext = build_plaintext(args.payload_size, args.seed)
-    ciphertext = bytes(b ^ key for b in plaintext)
-
     text_vaddr = 0x400078
     payload_vaddr = 0x401000
-    decryptor = build_decryptor(payload_vaddr, len(ciphertext), key)
+
+    if args.rolling_key:
+        try:
+            rkey = bytes.fromhex(args.rolling_key)
+        except ValueError:
+            ap.error("--rolling-key must be hex")
+        if len(rkey) not in (1, 2, 4, 8):
+            ap.error("--rolling-key must be 1, 2, 4 or 8 bytes")
+        ciphertext = bytes(b ^ rkey[i % len(rkey)] for i, b in enumerate(plaintext))
+        decryptor = build_rolling_decryptor(payload_vaddr, len(ciphertext), rkey)
+    else:
+        key = int(args.key, 0)
+        if not 0 <= key <= 0xFF:
+            ap.error("key must be a single byte (0..255)")
+        ciphertext = bytes(b ^ key for b in plaintext)
+        decryptor = build_decryptor(payload_vaddr, len(ciphertext), key)
     elf = build_elf(decryptor, ciphertext, text_vaddr, payload_vaddr)
 
     with open(args.output, "wb") as f:
@@ -168,7 +216,10 @@ def main() -> int:
     print(f"wrote {len(elf):>6d} bytes to {args.output}")
     print(f"  decryptor at file offset 0x{0x78:x} (vaddr 0x{text_vaddr:x})")
     print(f"  payload   at file offset 0x{0x1000:x} (vaddr 0x{payload_vaddr:x}, {len(ciphertext)} bytes)")
-    print(f"  XOR key   0x{key:02x}")
+    if args.rolling_key:
+        print(f"  XOR key   {rkey.hex()} (rolling, register-held)")
+    else:
+        print(f"  XOR key   0x{key:02x}")
     return 0
 
 
