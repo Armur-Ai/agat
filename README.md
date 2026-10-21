@@ -344,6 +344,8 @@ Defenders deserve exact limits, so here they are:
 - [x] Instruction-substitution folding in the metamorphic canonical form
 - [x] Mach-O, including universal binaries
 - [x] AArch64 (ARM64) disassembly, CFG and register canonicalization
+- [x] Parallel scanning, JSON Schema contract, labeled-corpus evaluation
+- [x] Analyst tooling: `agat diff`, the TUI verdict console
 - [ ] Coverage: ARM64 decryptor-loop detection, instruction reordering, keystream ciphers
 - [ ] `agat-rewriter`: ethically-scoped fixture generator for AI-rewrite research
 
