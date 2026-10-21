@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="560" viewBox="0 0 1100 560" role="img" aria-label="agat deployment: train once, sign a model pack, distribute it offline to air-gapped scanners, CI, and SOAR">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#03050b"/><stop offset="1" stop-color="#0c0a1d"/></linearGradient>
+    <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1" fill="#5ef2ff" fill-opacity="0.06"/></pattern>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#d07bff" fill-opacity="0.85"/></marker>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#5ef2ff"/><stop offset="1" stop-color="#d07bff"/></linearGradient>
+    <style>
+      .box  { fill:#0b1226; stroke:#5ef2ff; stroke-opacity:.5; stroke-width:1.2; }
+      .h    { font:700 15px ui-monospace,Menlo,monospace; fill:#e8efff; }
+      .hs   { font:700 14px ui-monospace,Menlo,monospace; fill:#e8efff; }
+      .t    { font:11.5px ui-monospace,Menlo,monospace; fill:#93a4cc; }
+      .lab  { font:700 11px ui-monospace,Menlo,monospace; letter-spacing:2px; fill:#d07bff; }
+      .flow { stroke:#d07bff; stroke-opacity:.55; stroke-width:1.6; fill:none; marker-end:url(#a); }
+      .gap  { font:700 11px ui-monospace,Menlo,monospace; letter-spacing:4px; fill:#8a9bc4; }
+    </style>
+  </defs>
+  <rect width="1100" height="560" fill="url(#bg)"/><rect width="1100" height="560" fill="url(#dots)"/>
+
+  <text x="550" y="44" text-anchor="middle" class="h">Train once. Sign. Deploy offline. No network, ever.</text>
+
+  <!-- SOC / build host -->
+  <rect x="60" y="110" width="250" height="150" rx="12" class="box" stroke="#2bd99a" stroke-opacity=".6"/>
+  <text x="80" y="140" class="h">SOC / build host</text>
+  <text x="80" y="166" class="t">agat ingest · analyze</text>
+  <text x="80" y="184" class="t">agat self build · repertoire</text>
+  <text x="80" y="202" class="t">agat mature --family …</text>
+  <text x="80" y="228" class="t" fill="#2bd99a">agat repertoire export</text>
+  <text x="80" y="246" class="t" fill="#2bd99a">  --sign keys/secops.key</text>
+
+  <!-- signed pack -->
+  <rect x="420" y="140" width="260" height="90" rx="12" fill="#120d26" stroke="url(#accent)" stroke-width="1.6"/>
+  <text x="440" y="170" class="hs">◆ model.agatpack</text>
+  <text x="440" y="192" class="t">self + repertoire + memory</text>
+  <text x="440" y="210" class="t">SHA-256 · Ed25519 signature</text>
+
+  <!-- gap -->
+  <line x1="730" y1="90" x2="730" y2="480" stroke="#8a9bc4" stroke-opacity=".3" stroke-dasharray="4 6"/>
+  <text x="730" y="80" text-anchor="middle" class="gap">THE AIR GAP</text>
+  <text x="730" y="500" text-anchor="middle" class="t">only the pack + public key cross over</text>
+
+  <!-- consumers -->
+  <rect x="800" y="96" width="250" height="96" rx="10" class="box"/>
+  <text x="818" y="124" class="hs">air-gapped scanners</text>
+  <text x="818" y="146" class="t">agat repertoire import --trust</text>
+  <text x="818" y="164" class="t">agat scan /quarantine</text>
+  <text x="818" y="182" class="t">verify sig · metric · integrity</text>
+
+  <rect x="800" y="216" width="250" height="96" rx="10" class="box"/>
+  <text x="818" y="244" class="hs">CI / build pipeline</text>
+  <text x="818" y="266" class="t">agat scan dist/ --sarif</text>
+  <text x="818" y="284" class="t">--fail-on malicious</text>
+  <text x="818" y="302" class="t">exit code gates the build</text>
+
+  <rect x="800" y="336" width="250" height="96" rx="10" class="box"/>
+  <text x="818" y="364" class="hs">SOAR / gateways</text>
+  <text x="818" y="386" class="t">agat serve · POST /v1/scan</text>
+  <text x="818" y="404" class="t">ScanResult JSON · SARIF</text>
+  <text x="818" y="422" class="t">X-Agat-Severity header</text>
+
+  <!-- flows -->
+  <text x="365" y="130" class="lab">EXPORT</text>
+  <path d="M310 185 C360 185 380 185 416 185" class="flow"/>
+  <path d="M680 185 C745 185 755 144 796 144" class="flow"/>
+  <path d="M680 190 C745 230 755 264 796 264" class="flow"/>
+  <path d="M680 200 C745 330 755 384 796 384" class="flow"/>
+</svg>
