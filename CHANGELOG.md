@@ -13,7 +13,8 @@ The release that turns the research engine into a deployable product.
 **Operator surface**
 - `agat scan <files|dirs…>`: stateless one-shot scanning. Files are analyzed
   in memory, nothing is written, no vault password is needed. `--ingest`
-  keeps the library workflow.
+  keeps the library workflow. Files scan in parallel (`-j/--jobs`, default
+  all cores; 10.7× on 18 cores) with deterministic, ordered output.
 - Output formats `text`, `table` (one line per file, colored severities),
   `json` (`agat.scan/v1`), and `sarif` (SARIF 2.1.0); exit codes `0` clean ·
   `2` review/suspicious · `3` malicious · `1` error; `--fail-on`.
@@ -73,7 +74,7 @@ The release that turns the research engine into a deployable product.
 - Memory cells track their exact covering spread instead of an
   ever-growing bound.
 - The recursive-descent worklist is architecture-neutral (`disasm::descend`).
-- `agat-disasm` 0.2.0, `agat-poly` 0.2.0 and `agat-meta` 0.3.0;
+- `agat-disasm` 0.2.0, `agat-poly` 0.2.0, `agat-meta` 0.3.0 and `agat-ai` 0.2.0;
   `ANTIGEN_LAYOUT_VERSION` 2.
   Models trained before these versions must be retrained (old packs are
   refused at import).
@@ -84,3 +85,5 @@ The release that turns the research engine into a deployable product.
 - Floats now round-trip exactly through JSON; persisted models had drifted
   in the last bit on every save/load.
 - The top-k opcode histogram was nondeterministic on count ties.
+- Opcode-diversity entropy was summed in HashMap order, so the same file's
+  affinities differed in the last bits between runs.

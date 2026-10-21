@@ -231,7 +231,12 @@ agat scan ./quarantine --output table               # one line per file
 agat scan ./build/out --sarif > agat.sarif          # GitHub/GitLab code scanning, SIEMs
 agat scan ./artifacts --json | jq '.[] | select(.verdict.severity=="malicious")'
 agat scan ./release --fail-on malicious             # gate a pipeline on the verdict
+agat scan /mnt/share -j 8                            # parallel (default: all cores)
 ```
+
+Batch scans run in parallel and stay deterministic: 896 macOS system binaries
+scan in about 2 seconds on an 18-core laptop, with output identical to a
+single-threaded run.
 
 Exit codes are the contract: **`0`** clean · **`2`** review/suspicious ·
 **`3`** malicious · **`1`** agat itself failed.
