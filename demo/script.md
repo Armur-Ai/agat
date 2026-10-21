@@ -1,8 +1,8 @@
 # agat demo: speaker notes
 
-`demo/run.sh --pace 3` drives the whole thing. On stage, prefer
+`demo/run.sh --pace 3` drives the whole thing (acts 0–5). On stage, prefer
 `demo/run.sh --docker agat:dev --pace 3`: the same demo under
-`docker run --network none`. Total running time is about 4 minutes
+`docker run --network none`. Total running time is about 5 minutes
 with pacing.
 
 Before the talk: `docker build -t agat:dev .` and
@@ -78,8 +78,27 @@ binaries), not in this demo.
   drops into GitHub code scanning or a SIEM unchanged.
 - `echo $?` → `3`. CI can gate on it, and `--fail-on` tunes the bar.
 
-> "One static binary, one container, no network, JSON and SARIF out.
-> That's the whole deployment story."
+> "One static binary, one container, no network, JSON and SARIF out."
+
+## Act 5: deploy to an air-gapped machine (≈ 45 s)
+
+- `repertoire export … --sign keys/demo.key`: the trained model becomes one
+  signed file. Point at the manifest: families, variant counts, and the
+  signer's key id.
+- A **fresh, empty** agat home stands in for the air-gapped machine. It
+  receives only the pack and the public key.
+- `repertoire import --trust keys/demo.pub` verifies the SHA-256, the Ed25519
+  signature, the trusted signer, and that the pack was trained in the same
+  metric space. Then it installs.
+- `scan` on the new machine gives the same verdicts, and the table's last
+  line names the model: `pack demo-threats v1 · signed by …`.
+
+> "Train once in the SOC. Ship a signed file through your transfer station.
+> Every air-gapped box scans with the same, verifiable model. Tamper with
+> one byte and import refuses it."
+
+(Optional live proof: edit one character in `packs/threats.agatpack` and
+re-import. It fails the integrity check.)
 
 ---
 

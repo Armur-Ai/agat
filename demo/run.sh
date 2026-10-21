@@ -10,6 +10,8 @@
 #          (LLM artifacts, recovered decryptor) fire: malicious anomaly
 #   act 3  a file from the benign baseline: clean
 #   act 4  the pipeline view: a batch scan to SARIF, and the exit code
+#   act 5  deploy: export the model as a signed pack, import it into an
+#          empty agat home (a fresh, air-gapped machine), same verdicts
 #
 # Every agat call runs either the local binary or, with --docker IMAGE,
 # `docker run --network none` (no network at all). The transcript is
@@ -77,13 +79,15 @@ mkdir -p "$WORK"/{baseline,family,suspects}
 cd "$WORK"
 export AGAT_VAULT_PASSWORD="agat-demo"
 
+# agat against the agat home named by $HOME_NAME (default: home).
+HOME_NAME=home
 agat() {
   if [[ "$MODE" == "docker" ]]; then
     docker run --rm --network none --user "$(id -u):$(id -g)" \
       -e AGAT_VAULT_PASSWORD -v "$WORK:/scan" -w /scan \
-      "$IMAGE" --home home "$@"
+      "$IMAGE" --home "$HOME_NAME" "$@"
   else
-    "$AGAT" --home home "$@"
+    "$AGAT" --home "$HOME_NAME" "$@"
   fi
 }
 
@@ -96,6 +100,13 @@ run()  { # echo the command, run it, record stdout; never stop on a verdict code
   agat "$@" 2>/dev/null </dev/null | tee -a "$TRANSCRIPT" || true
 }
 act()  { say ""; say "════════ $* ════════"; [[ "$PACE" == 0 ]] || sleep "$PACE"; }
+# Like run, but leaves out per-run lines (timestamps, digests) so the
+# local and container transcripts stay byte-comparable.
+run_stable() {
+  say ""
+  say "\$ agat $*"
+  agat "$@" 2>/dev/null </dev/null | grep -v -E '^ *(built|sha256|installed) ' | tee -a "$TRANSCRIPT" || true
+}
 
 # ---- fixtures (synthetic, benign, deterministic) --------------------
 G="$REPO_ROOT/tools"
@@ -135,6 +146,25 @@ code=0; agat scan suspects >/dev/null 2>&1 </dev/null || code=$?
 say ""
 say "\$ agat scan suspects; echo \$?"
 say "$code"
+
+act "act 5 · deploy: a signed model pack to an air-gapped machine"
+# One demo signing key shared by every run (so local and container
+# transcripts match). Demo only: never reuse it for real packs.
+KEYS="$REPO_ROOT/demo/.work/keys"
+mkdir -p keys packs
+if [[ -f "$KEYS/demo.key" ]]; then
+  cp "$KEYS"/demo.key "$KEYS"/demo.pub keys/
+else
+  agat key generate keys/demo --comment agat-demo >/dev/null
+  mkdir -p "$KEYS" && cp keys/demo.key keys/demo.pub "$KEYS"/
+fi
+run_stable repertoire export packs/threats.agatpack --name demo-threats --version 1 --sign keys/demo.key
+say ""
+say "(new machine: an empty agat home; it receives only the pack file and the public key)"
+HOME_NAME=airgap
+run_stable repertoire import packs/threats.agatpack --trust keys/demo.pub
+run scan suspects --output table
+HOME_NAME=home
 
 # Outside the transcript, so local and docker transcripts stay comparable.
 echo ""
