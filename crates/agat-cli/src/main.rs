@@ -348,6 +348,13 @@ fn main() -> Result<()> {
         .with_writer(std::io::stderr)
         .init();
 
+    // Restore the default SIGPIPE disposition so piping agat into `head`
+    // or `grep -q` terminates quietly instead of panicking on a write.
+    #[cfg(unix)]
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+
     let cli = Cli::parse();
 
     // No subcommand: show the splash and exit 0.
@@ -769,24 +776,43 @@ fn cmd_list(store: &Store) -> Result<()> {
         eprintln!("no samples in store");
         return Ok(());
     }
-    println!(
-        "{:<14}  {:>10}  {:<10}  {:<25}  ORIGINAL FILENAME",
+    // Keep the id in column 1 (scripts parse it); color it green when the
+    // sample has been analyzed, dim otherwise.
+    let st = style::Style::new(style::use_color());
+    let header = format!(
+        "{:<14}  {:>10}  {:<10}  {:<19}  ORIGINAL FILENAME",
         "ID", "SIZE", "KIND", "INGESTED"
     );
-    for s in samples {
+    println!("{}", st.bold(&st.fg(style::palette::CYAN, &header)));
+    let mut analyzed_n = 0usize;
+    for s in &samples {
+        let analyzed = store.get_features(&s.sample.id, "static")?.is_some();
+        analyzed_n += analyzed as usize;
+        let id = format!("{:<12}", s.sample.id.short());
+        let id_col = if analyzed {
+            st.fg(style::palette::GREEN, &id)
+        } else {
+            st.dim(&id)
+        };
         println!(
-            "{:<14}  {:>10}  {:<10}  {:<25}  {}",
-            s.sample.id.short(),
+            "{}  {:>10}  {:<10}  {}  {}",
+            id_col,
             s.sample.size,
             s.sample.kind,
-            s.ingested_at.format("%Y-%m-%d %H:%M:%S"),
+            st.dim(&s.ingested_at.format("%Y-%m-%d %H:%M:%S").to_string()),
             s.sample
                 .metadata
                 .original_filename
                 .as_deref()
-                .unwrap_or("-")
+                .unwrap_or("-"),
         );
     }
+    eprintln!(
+        "\n{} sample{} · {} analyzed",
+        samples.len(),
+        if samples.len() == 1 { "" } else { "s" },
+        analyzed_n
+    );
     Ok(())
 }
 
