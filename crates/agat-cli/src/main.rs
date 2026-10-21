@@ -1205,24 +1205,38 @@ fn cmd_diff(a: String, b: String, store: &Store) -> Result<()> {
     }
     let d = agat_engine::diff_feature_maps(&map_a, &map_b);
 
-    println!("diff  {}  vs  {}", id_a.short(), id_b.short());
+    let st = style::Style::new(style::use_color());
+    println!(
+        "{} {}  vs  {}",
+        st.bold(&st.fg(style::palette::CYAN, "diff")),
+        st.fg(style::palette::YELLOW, &id_a.short()),
+        st.fg(style::palette::YELLOW, &id_b.short())
+    );
     println!();
     println!("  affinity (blended)  {:.3}", d.affinity);
     println!("  cosine (signature)  {:.3}", d.cosine);
     println!("  jaccard (blocks)    {:.3}", d.jaccard);
     let yn = |o: Option<bool>| match o {
-        Some(true) => "yes",
-        Some(false) => "no",
-        None => "n/a",
+        Some(true) => st.fg(style::palette::GREEN, "yes"),
+        Some(false) => st.dim("no"),
+        None => st.dim("n/a"),
     };
     println!("  same CFG fingerprint        {}", yn(d.shared_cfg));
     println!("  same plaintext fingerprint  {}", yn(d.shared_plaintext));
 
-    println!("\n  per feature group (cosine):");
+    println!(
+        "\n  {}",
+        st.bold(&st.fg(style::palette::CYAN, "per feature group (cosine)"))
+    );
     for (group, cos) in &d.groups {
         let bar_len = (cos.clamp(0.0, 1.0) * 24.0).round() as usize;
-        let bar: String = "█".repeat(bar_len);
-        println!("    {:<10} {:.3}  {}", group, cos, bar);
+        let bar = "█".repeat(bar_len);
+        println!(
+            "    {:<10} {:.3}  {}",
+            group,
+            cos,
+            st.fg(style::palette::VIOLET, &bar)
+        );
     }
 
     // A plain-language read of the result.
@@ -1238,7 +1252,11 @@ fn cmd_diff(a: String, b: String, store: &Store) -> Result<()> {
     } else {
         "little in common"
     };
-    println!("  → {verdict}");
+    println!(
+        "  {} {}",
+        st.fg(style::palette::VIOLET, "→"),
+        st.bold(verdict)
+    );
     Ok(())
 }
 
