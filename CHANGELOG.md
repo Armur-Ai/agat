@@ -43,13 +43,15 @@ The release that turns the research engine into a deployable product.
 - Instruction-substitution folding in the metamorphic canonical form
   (`inc` ≡ `add 1` ≡ `lea +1`, zeroing idioms, flag tests, doubling,
   `push; pop` ≡ `mov`).
+- AArch64 (ARM64) disassembly (yaxpeax-arm) with prologue-seeded descent,
+  and AArch64 register families in the metamorphic canonical form.
 - Mach-O parsing, including the x86-64 slice of universal binaries;
   Mach-O sample kinds (with Java class-file disambiguation).
 
 **Evidence** (`bench/`)
 - `run.sh`: detection rate on held-out variants and false-positive rate on
-  held-out real benign binaries (Debian, and macOS via `fetch-benign.sh
-  --macos`), CI-gateable.
+  held-out real benign binaries (Debian x86-64 and aarch64 via
+  `fetch-benign.sh [--arch arm64]`, and macOS via `--macos`), CI-gateable.
 - `sweep.sh`: affinity-weight sensitivity across 32 perturbed weightings.
 - `keys.sh`: exact key recovery, plus `--stress` (the solver run ungated
   over every data section of a benign corpus).
@@ -67,7 +69,9 @@ The release that turns the research engine into a deployable product.
   (`ImmuneModel`, `analyze_bytes`, `scan_bytes`); the CLI is a thin layer.
 - Memory cells track their exact covering spread instead of an
   ever-growing bound.
-- `agat-poly` 0.2.0 and `agat-meta` 0.2.0; `ANTIGEN_LAYOUT_VERSION` 2.
+- The recursive-descent worklist is architecture-neutral (`disasm::descend`).
+- `agat-disasm` 0.2.0, `agat-poly` 0.2.0 and `agat-meta` 0.3.0;
+  `ANTIGEN_LAYOUT_VERSION` 2.
   Models trained before these versions must be retrained (old packs are
   refused at import).
 

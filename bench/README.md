@@ -78,6 +78,20 @@ same gate:
     family swallowed  0/448
 ```
 
+### Third corpus: Debian aarch64 (ARM64)
+
+`bench/fetch-benign.sh --arch arm64` (220 aarch64 ELFs). With ARM64
+disassembly and canonicalization enabled:
+
+```
+  [real benign, held out] n=110
+    any non-clean     0/110  = 0.0%
+    malicious         0/110  = 0.0%
+    family swallowed  0/110
+```
+
+and the ungated key-solver stress test accepts 0 keys in 15,459 attempts.
+
 ### Honest notes on `run.sh`
 
 - **The self-model must be trained on benign software like the software

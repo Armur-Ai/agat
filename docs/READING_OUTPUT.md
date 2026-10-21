@@ -136,7 +136,8 @@ SARIF emits one result per non-clean file. `ruleId` is
 ## 6. What agat cannot tell you
 
 - **Coverage**: x86/x64 PE, ELF, and Mach-O (the x86-64 slice of a
-  universal binary). Other architectures get static
+  universal binary), plus AArch64 ELF/Mach-O for disassembly and structure
+  (decryptor-loop detection is x86-only so far). Other architectures get static
   analysis but no structural (CFG) comparison, so recognition is weaker.
   Key recovery covers repeating XOR/ADD/SUB keys (up to 16 bytes, from an
   immediate operand or solved from the ciphertext), not keystream ciphers.
