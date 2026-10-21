@@ -1,0 +1,3 @@
+# agat uses rustfmt defaults; this file documents that and pins the
+# edition so `cargo fmt` is stable across toolchains.
+edition = "2021"
