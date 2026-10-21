@@ -152,7 +152,11 @@ agat scan /mnt/share -j 8                     # 8 parallel workers (default: all
 
 Batch scans run in parallel and stay deterministic — output is identical to
 a single-threaded run, and a progress line appears on the terminal for large
-batches.
+batches. Cap the workers with `-j N`.
+
+Two global flags apply to every command: `--home PATH` (the agat data
+directory) and `--color auto|always|never` (color control, honoring
+`NO_COLOR`). `--config PATH` points at a specific config file.
 
 To add a file to the sample library as you scan it (ingest + persist
 features), pass `--ingest` (this needs the vault password):
