@@ -4,6 +4,7 @@
 |---|---|
 | [GUIDE.md](GUIDE.md) | **Start here.** Install, train, scan, configure, deploy — end to end. |
 | [CONCEPTS.md](CONCEPTS.md) | How agat thinks: the immune model, and where the analogy is honest. |
+| [FAQ.md](FAQ.md) | Common questions: AV vs agat, the "model", training, trust, speed. |
 | [READING_OUTPUT.md](READING_OUTPUT.md) | How to read a verdict, field by field. |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | Production operations: fleets, signed packs, air gap, performance, hardening. |
 | [INTEGRATION.md](INTEGRATION.md) | Recipes for CI, SIEM (Splunk/Elastic), SOAR, and quarantine folders. |
