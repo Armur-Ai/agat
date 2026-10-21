@@ -65,6 +65,12 @@ CREATE TABLE IF NOT EXISTS immune_memory (
     memory_json TEXT    NOT NULL,
     created_at  TEXT    NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS immune_pack (
+    name        TEXT    PRIMARY KEY,
+    pack_json   TEXT    NOT NULL,
+    created_at  TEXT    NOT NULL
+);
 "#;
 
 pub struct Store {
@@ -319,6 +325,25 @@ impl Store {
         self.get_blob("immune_memory", "memory_json", name)
     }
 
+    /// Store (or replace) the provenance of the model pack installed in
+    /// slot `name` (which pack, which version, who signed it).
+    pub fn put_pack_info(&self, name: &str, json: &str) -> Result<()> {
+        self.put_blob("immune_pack", "pack_json", name, json)
+    }
+    /// Retrieve the installed pack's provenance JSON, if the slot's model
+    /// came from an imported pack.
+    pub fn get_pack_info(&self, name: &str) -> Result<Option<String>> {
+        self.get_blob("immune_pack", "pack_json", name)
+    }
+    /// Forget the slot's pack provenance — called when the model is
+    /// retrained locally, so it no longer is the pack that was imported.
+    pub fn clear_pack_info(&self, name: &str) -> Result<()> {
+        self.conn
+            .execute("DELETE FROM immune_pack WHERE name = ?1", params![name])
+            .map_err(db_err)?;
+        Ok(())
+    }
+
     fn put_blob(&self, table: &str, col: &str, name: &str, json: &str) -> Result<()> {
         let now = Utc::now().to_rfc3339();
         let sql =
@@ -454,5 +479,23 @@ mod tests {
             .unwrap()
             .unwrap()
             .contains("cells"));
+    }
+
+    #[test]
+    fn pack_info_round_trips_and_clears() {
+        let store = Store::open_in_memory().unwrap();
+        assert!(store.get_pack_info("default").unwrap().is_none());
+        store
+            .put_pack_info("default", r#"{"name":"acme","version":"1"}"#)
+            .unwrap();
+        assert!(store
+            .get_pack_info("default")
+            .unwrap()
+            .unwrap()
+            .contains("acme"));
+        store.clear_pack_info("default").unwrap();
+        assert!(store.get_pack_info("default").unwrap().is_none());
+        // Clearing an absent slot is fine.
+        store.clear_pack_info("default").unwrap();
     }
 }
