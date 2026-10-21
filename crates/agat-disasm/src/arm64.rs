@@ -37,6 +37,37 @@ pub fn decode_at(bytes: &[u8], base: u64, addr: u64) -> Option<(DisasmLine, usiz
     Some((line, INSN_LEN))
 }
 
+/// Function entry points found by a linear scan for AArch64 prologues:
+/// pointer-authentication entries (`paciasp`/`pacibsp`), BTI landing pads
+/// for calls (`bti c`/`bti jc`, which decode as `hint #0x22`/`#0x26`),
+/// and frame setup (`stp x29, x30, [sp, #-N]!`).
+///
+/// Recursive descent alone reaches little of a typical ARM64 binary:
+/// `_start` loads `main` from the GOT and passes it to the libc start
+/// routine in a register, and calls through PLT stubs and vtables are
+/// indirect. Fixed-width instructions make a linear scan reliable on
+/// AArch64 (unlike x86, where it can desynchronize), so prologues are a
+/// sound source of extra descent roots.
+pub fn prologue_roots(bytes: &[u8], base: u64) -> Vec<u64> {
+    let mut roots = Vec::new();
+    let mut addr = base;
+    while let Some((line, len)) = decode_at(bytes, base, addr) {
+        let is_entry = match line.mnemonic.as_str() {
+            "paciasp" | "pacibsp" => true,
+            "hint" => matches!(line.operands.as_str(), "#0x22" | "#0x26"),
+            "stp" => {
+                line.operands.starts_with("x29, x30, [sp, #-") && line.operands.ends_with("]!")
+            }
+            _ => false,
+        };
+        if is_entry {
+            roots.push(addr);
+        }
+        addr += len as u64;
+    }
+    roots
+}
+
 fn line_for(inst: &Instruction, addr: u64, word: &[u8]) -> DisasmLine {
     let text = inst.to_string();
     let (mnemonic, operands) = match text.split_once(' ') {
@@ -130,5 +161,16 @@ mod tests {
 
         assert_eq!(at(0x101c).flow, FlowKind::Return);
         assert!(decode_at(&code, 0x1000, 0x1020).is_none(), "past the end");
+    }
+
+    #[test]
+    fn finds_function_prologues() {
+        // 0x0 ret ; 0x4 paciasp ; 0x8 stp x29, x30, [sp, #-0x20]! ;
+        // 0xc mov x29, sp ; 0x10 bti c ; 0x14 stp x29, x30, [sp, #0x10]
+        let code = le(&[
+            0xd65f03c0, 0xd503233f, 0xa9be7bfd, 0x910003fd, 0xd503245f, 0xa9017bfd,
+        ]);
+        // The non-pre-indexed stp (a frame save, not setup) is not an entry.
+        assert_eq!(prologue_roots(&code, 0x1000), vec![0x1004, 0x1008, 0x1010]);
     }
 }

@@ -1,14 +1,16 @@
 //! [`agat_core::Analyzer`] implementation for x86/x64 disassembly.
 
 use crate::cfg::{build_cfg, EdgeKind};
-use crate::disasm::{recursive_descent, DisasmLine};
+use crate::disasm::{descend, recursive_descent, DisasmLine};
 use crate::features::DisasmFeatures;
 use agat_core::{AnalysisContext, Analyzer, FeatureBundle, Result, Sample};
 use agat_static::parse::{parse, Arch, Section};
 use std::collections::{HashMap, HashSet};
 
 const NAME: &str = "disasm";
-const VERSION: &str = "0.1.0";
+// 0.2.0: AArch64 support (x86 output unchanged; bumped so ARM samples
+// analyzed earlier, which got empty features, are re-analyzed).
+const VERSION: &str = "0.2.0";
 
 pub struct DisasmAnalyzer {
     pub max_instructions: usize,
@@ -46,7 +48,7 @@ impl Analyzer for DisasmAnalyzer {
 
         let bitness = match parsed.arch {
             Arch::X86 => 32,
-            Arch::X86_64 => 64,
+            Arch::X86_64 | Arch::Aarch64 => 64,
             _ => 0,
         };
         if bitness == 0 {
@@ -70,17 +72,30 @@ impl Analyzer for DisasmAnalyzer {
                 roots.push(exp.address);
             }
         }
+        if parsed.arch == Arch::Aarch64 {
+            roots.extend(crate::arm64::prologue_roots(&section_bytes, section_base));
+        }
         if roots.is_empty() {
             roots.push(section_base);
         }
 
-        let lines = recursive_descent(
-            &section_bytes,
-            section_base,
-            bitness,
-            &roots,
-            self.max_instructions,
-        );
+        let lines = if parsed.arch == Arch::Aarch64 {
+            descend(
+                &section_bytes,
+                section_base,
+                &roots,
+                self.max_instructions,
+                |addr| crate::arm64::decode_at(&section_bytes, section_base, addr),
+            )
+        } else {
+            recursive_descent(
+                &section_bytes,
+                section_base,
+                bitness,
+                &roots,
+                self.max_instructions,
+            )
+        };
         let (blocks, edges) = build_cfg(&lines);
 
         let opcode_histogram = top_k_mnemonics(&lines, self.histogram_top_k);
