@@ -1,5 +1,6 @@
 //! agat command-line entry point.
 
+mod banner;
 mod config;
 mod immune;
 mod packs;
@@ -48,7 +49,7 @@ struct Cli {
     config: Option<PathBuf>,
 
     #[command(subcommand)]
-    command: Cmd,
+    command: Option<Cmd>,
 }
 
 // Variant order is the order `agat --help` lists commands: scanning first,
@@ -326,8 +327,14 @@ fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
+    // No subcommand: show the splash and exit 0.
+    let Some(command) = cli.command else {
+        print!("{}", banner::splash(banner::use_color()));
+        return Ok(());
+    };
+
     // Self-describing commands need no agat home, config, or store.
-    match &cli.command {
+    match &command {
         Cmd::Completions { shell } => {
             let mut cmd = <Cli as clap::CommandFactory>::command();
             clap_complete::generate(*shell, &mut cmd, "agat", &mut std::io::stdout());
@@ -347,6 +354,7 @@ fn main() -> Result<()> {
         }
         _ => {}
     }
+    let cli_command = command;
 
     let agat_home = resolve_home(cli.home.as_deref())?;
     std::fs::create_dir_all(&agat_home)
@@ -361,7 +369,7 @@ fn main() -> Result<()> {
     // run without a password — which is what makes `agat scan`/`recognize`
     // usable non-interactively in a pipeline.
     let needs_vault = matches!(
-        cli.command,
+        cli_command,
         Cmd::Ingest { .. } | Cmd::Analyze { .. } | Cmd::Scan { ingest: true, .. }
     );
     let vault = if needs_vault {
@@ -372,7 +380,7 @@ fn main() -> Result<()> {
     };
     let store = Store::open(&store_path).context("opening store")?;
 
-    match cli.command {
+    match cli_command {
         Cmd::Ingest { paths } => {
             cmd_ingest(paths, vault.as_ref().expect("ingest needs a vault"), &store)
         }
