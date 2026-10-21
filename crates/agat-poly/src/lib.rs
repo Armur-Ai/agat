@@ -26,6 +26,7 @@ pub mod analyzer;
 pub mod detect;
 pub mod features;
 pub mod recover;
+pub mod solve;
 
 pub use analyzer::PolyAnalyzer;
 pub use detect::{DecryptorPattern, Operation, Signal};
