@@ -33,10 +33,32 @@ Exit codes (scan, recognize):
 
 Reading a result: docs/READING_OUTPUT.md · https://github.com/Armur-Ai/agat";
 
+/// Build metadata shown by `agat --version` / `agat -V`.
+fn long_version() -> &'static str {
+    use std::sync::OnceLock;
+    static V: OnceLock<String> = OnceLock::new();
+    V.get_or_init(|| {
+        let mut s = env!("CARGO_PKG_VERSION").to_string();
+        if let Some(c) = option_env!("AGAT_COMMIT") {
+            s.push_str(&format!(" ({c})"));
+        }
+        s.push_str("\nan adaptive immune system for binaries");
+        if let Some(t) = option_env!("AGAT_TARGET") {
+            s.push_str(&format!("\ntarget:  {t}"));
+        }
+        if let (Some(p), Some(r)) = (option_env!("AGAT_PROFILE"), option_env!("AGAT_RUSTC")) {
+            s.push_str(&format!("\nprofile: {p}  ·  {r}"));
+        }
+        s
+    })
+    .as_str()
+}
+
 #[derive(Parser)]
 #[command(
     name = "agat",
     version,
+    long_version = long_version(),
     about = "An adaptive immune system for binaries: catches polymorphic, metamorphic, and AI-rewritten malware variants, offline.",
     after_help = AFTER_HELP
 )]
