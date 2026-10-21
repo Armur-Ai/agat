@@ -196,6 +196,24 @@ const RULES: &[Rule] = &[
         false,
     ),
     r(
+        "gemma_turn",
+        ArtifactCategory::ChatMlMarker,
+        b"<start_of_turn>",
+        false,
+    ),
+    r(
+        "alpaca_instruction",
+        ArtifactCategory::ChatMlMarker,
+        b"### Instruction:",
+        false,
+    ),
+    r(
+        "alpaca_response",
+        ArtifactCategory::ChatMlMarker,
+        b"### Response:",
+        false,
+    ),
+    r(
         "vicuna_user",
         ArtifactCategory::ChatMlMarker,
         b"<|user|>",
@@ -236,6 +254,24 @@ const RULES: &[Rule] = &[
         "pad_token",
         ArtifactCategory::TokenizerFragment,
         b"<|pad|>",
+        false,
+    ),
+    r(
+        "fim_middle",
+        ArtifactCategory::TokenizerFragment,
+        b"<fim_middle>",
+        false,
+    ),
+    r(
+        "fim_suffix",
+        ArtifactCategory::TokenizerFragment,
+        b"<fim_suffix>",
+        false,
+    ),
+    r(
+        "reserved_special",
+        ArtifactCategory::TokenizerFragment,
+        b"<|reserved_special_token_",
         false,
     ),
     // --- model magic / weight formats (exact) -----------------------
@@ -299,6 +335,24 @@ const RULES: &[Rule] = &[
         "ollama_endpoint",
         ArtifactCategory::ApiEndpoint,
         b"/api/generate",
+        false,
+    ),
+    r(
+        "deepseek_endpoint",
+        ArtifactCategory::ApiEndpoint,
+        b"api.deepseek.com",
+        false,
+    ),
+    r(
+        "xai_endpoint",
+        ArtifactCategory::ApiEndpoint,
+        b"api.x.ai",
+        false,
+    ),
+    r(
+        "together_endpoint",
+        ArtifactCategory::ApiEndpoint,
+        b"api.together.xyz",
         false,
     ),
     // --- system prompts (case-insensitive) --------------------------
