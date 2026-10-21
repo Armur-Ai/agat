@@ -1,0 +1,101 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="520" viewBox="0 0 1200 520" role="img" aria-label="agat's immune lifecycle: training builds a self-model, a detector repertoire, and family memory; detection presents a sample's antigen to them and fuses a verdict">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#03050b"/><stop offset="1" stop-color="#0c0a1d"/>
+    </linearGradient>
+    <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1" fill="#5ef2ff" fill-opacity="0.06"/>
+    </pattern>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#5ef2ff" fill-opacity="0.75"/>
+    </marker>
+    <marker id="am" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#ff4fd8" fill-opacity="0.8"/>
+    </marker>
+    <style>
+      .box  { fill:#0b1226; stroke:#5ef2ff; stroke-opacity:.45; stroke-width:1.2; }
+      .boxg { fill:#071a16; stroke:#2bd99a; stroke-opacity:.6; stroke-width:1.2; }
+      .boxm { fill:#160b24; stroke:#ff4fd8; stroke-opacity:.6; stroke-width:1.2; }
+      .boxv { fill:#120d26; stroke:url(#accent); stroke-width:1.6; }
+      .h    { font:700 14px ui-monospace,Menlo,monospace; fill:#e8efff; }
+      .t    { font:11.5px ui-monospace,Menlo,monospace; fill:#93a4cc; }
+      .lane { font:700 12px ui-monospace,Menlo,monospace; letter-spacing:3px; }
+      .flow { stroke:#5ef2ff; stroke-opacity:.5; stroke-width:1.4; fill:none; marker-end:url(#a); }
+      .flowm{ stroke:#ff4fd8; stroke-opacity:.6; stroke-width:1.4; fill:none; marker-end:url(#am); }
+    </style>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#5ef2ff"/><stop offset="1" stop-color="#d07bff"/></linearGradient>
+  </defs>
+  <rect width="1200" height="520" fill="url(#bg)"/><rect width="1200" height="520" fill="url(#dots)"/>
+
+  <!-- TRAINING lane -->
+  <rect x="24" y="40" width="720" height="440" rx="12" fill="none" stroke="#2bd99a" stroke-opacity=".25" stroke-dasharray="6 5"/>
+  <text x="44" y="68" class="lane" fill="#2bd99a">TRAINING · once, on your own data</text>
+
+  <!-- self branch -->
+  <rect x="48" y="92" width="150" height="70" rx="9" class="boxg"/>
+  <text x="62" y="120" class="h">benign corpus</text>
+  <text x="62" y="140" class="t">your normal software</text>
+
+  <rect x="256" y="92" width="150" height="70" rx="9" class="boxg"/>
+  <text x="270" y="120" class="h">self-model</text>
+  <text x="270" y="140" class="t">the benign region</text>
+
+  <rect x="464" y="92" width="256" height="70" rx="9" class="box"/>
+  <text x="478" y="120" class="h">negative selection</text>
+  <text x="478" y="140" class="t">detectors that tile everything NOT self</text>
+
+  <!-- family branch -->
+  <rect x="48" y="300" width="150" height="70" rx="9" class="boxm"/>
+  <text x="62" y="328" class="h">family samples</text>
+  <text x="62" y="348" class="t">a few confirmed variants</text>
+
+  <rect x="256" y="300" width="150" height="70" rx="9" class="boxm"/>
+  <text x="270" y="328" class="h">clonal selection</text>
+  <text x="270" y="348" class="t">clone + hypermutate</text>
+
+  <rect x="464" y="300" width="256" height="70" rx="9" class="boxm"/>
+  <text x="478" y="328" class="h">memory cells</text>
+  <text x="478" y="348" class="t">a covering ball over the family</text>
+
+  <!-- training flows -->
+  <path d="M198 127 H252" class="flow"/>
+  <path d="M406 127 H460" class="flow"/>
+  <path d="M198 335 H252" class="flowm"/>
+  <path d="M406 335 H460" class="flowm"/>
+
+  <!-- repertoire aggregate -->
+  <rect x="464" y="196" width="256" height="70" rx="9" fill="#0b1226" stroke="#8fa8ff" stroke-opacity=".6"/>
+  <text x="478" y="224" class="h">repertoire + memory</text>
+  <text x="478" y="244" class="t">the trained model (one signed pack)</text>
+  <path d="M592 162 V192" class="flow"/>
+  <path d="M592 300 V270" class="flowm"/>
+
+  <!-- DETECTION lane -->
+  <rect x="768" y="40" width="408" height="440" rx="12" fill="none" stroke="#5ef2ff" stroke-opacity=".25" stroke-dasharray="6 5"/>
+  <text x="788" y="68" class="lane" fill="#5ef2ff">DETECTION · per sample, offline</text>
+
+  <rect x="792" y="92" width="360" height="56" rx="9" class="box"/>
+  <text x="806" y="116" class="h">unknown binary → antigen</text>
+  <text x="806" y="135" class="t">mutation-invariant behavioral signature</text>
+
+  <rect x="792" y="180" width="360" height="60" rx="9" class="boxg"/>
+  <text x="806" y="204" class="h">recognition</text>
+  <text x="806" y="224" class="t">affinity vs repertoire + memory → family?</text>
+
+  <rect x="792" y="268" width="360" height="60" rx="9" fill="#0b1226" stroke="#ff5c7a" stroke-opacity=".6" stroke-width="1.2"/>
+  <text x="806" y="292" class="h">danger</text>
+  <text x="806" y="312" class="t">harm signals → safe / ambiguous / dangerous</text>
+
+  <rect x="792" y="360" width="360" height="72" rx="9" class="boxv"/>
+  <text x="806" y="386" class="h">verdict  ·  ScanResult</text>
+  <text x="806" y="406" class="t">clean · review · suspicious · malicious</text>
+  <text x="806" y="423" class="t">text · table · JSON · SARIF · exit code</text>
+
+  <!-- model feeds detection -->
+  <path d="M720 231 C756 231 760 210 788 210" class="flow"/>
+  <!-- detection flows -->
+  <path d="M972 148 V176" class="flow"/>
+  <path d="M900 240 V264" class="flow"/>
+  <path d="M1044 240 V264" class="flow"/>
+  <path d="M972 328 V356" class="flow"/>
+</svg>
