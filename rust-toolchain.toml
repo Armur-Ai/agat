@@ -1,0 +1,5 @@
+# Pin the toolchain so every contributor and CI build is reproducible.
+# Bump deliberately, together with `rust-version` in Cargo.toml.
+[toolchain]
+channel = "stable"
+components = ["rustfmt", "clippy"]
