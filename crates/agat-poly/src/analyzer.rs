@@ -55,13 +55,9 @@ impl Analyzer for PolyAnalyzer {
     }
 }
 
-fn pull_features<T: serde::de::DeserializeOwned>(
-    ctx: &AnalysisContext,
-    name: &str,
-) -> Result<T> {
-    let value = ctx
-        .previous_features
-        .get(name)
-        .ok_or_else(|| Error::Other(format!("poly: required upstream features '{name}' missing")))?;
+fn pull_features<T: serde::de::DeserializeOwned>(ctx: &AnalysisContext, name: &str) -> Result<T> {
+    let value = ctx.previous_features.get(name).ok_or_else(|| {
+        Error::Other(format!("poly: required upstream features '{name}' missing"))
+    })?;
     serde_json::from_value(value.clone()).map_err(Error::from)
 }

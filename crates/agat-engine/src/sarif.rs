@@ -63,7 +63,11 @@ pub fn to_sarif(results: &[ScanResult]) -> Value {
             Severity::Review => "agat/review",
             Severity::Clean => unreachable!(),
         };
-        let uri = r.sample.name.clone().unwrap_or_else(|| r.sample.short.clone());
+        let uri = r
+            .sample
+            .name
+            .clone()
+            .unwrap_or_else(|| r.sample.short.clone());
         let family = r
             .recognition
             .family
@@ -132,8 +136,17 @@ mod tests {
             schema_version: SCAN_SCHEMA_VERSION.to_string(),
             agat_version: "test".into(),
             scanned_at: "2026-01-01T00:00:00Z".into(),
-            sample: SampleRef { id: "abc123".into(), short: "abc123".into(), name: Some(name.into()) },
-            antigen: AntigenSummary { dim: 4, blocks: 1, cfg_fingerprint: None, plaintext_fingerprint: None },
+            sample: SampleRef {
+                id: "abc123".into(),
+                short: "abc123".into(),
+                name: Some(name.into()),
+            },
+            antigen: AntigenSummary {
+                dim: 4,
+                blocks: 1,
+                cfg_fingerprint: None,
+                plaintext_fingerprint: None,
+            },
             recognition: RecognitionSummary {
                 recognized: sev != Severity::Clean,
                 verdict: "test".into(),
@@ -152,7 +165,11 @@ mod tests {
                 safe: 0.1,
                 signals: vec![],
             },
-            verdict: Verdict { severity: sev, summary: "s".into(), policy: None },
+            verdict: Verdict {
+                severity: sev,
+                summary: "s".into(),
+                policy: None,
+            },
         }
     }
 

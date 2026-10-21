@@ -38,7 +38,9 @@ impl Analyzer for AiAnalyzer {
         let artifacts = scan(&bytes);
         let stylometry = compute_stylometry(&sf, &df);
         let perplexity_result = compute_perplexity(&sf.strings.samples);
-        let perplexity_score = perplexity_result.as_ref().map(|r| score_perplexity(r.value));
+        let perplexity_score = perplexity_result
+            .as_ref()
+            .map(|r| score_perplexity(r.value));
 
         let artifact_scan_score = score_artifacts(&artifacts);
         let stylometry_score = score_stylometry(&stylometry);
@@ -121,10 +123,7 @@ fn combine(artifact: f64, stylometry: f64, perplexity: Option<f64>) -> f64 {
     raw.min(0.95)
 }
 
-fn pull_features<T: serde::de::DeserializeOwned>(
-    ctx: &AnalysisContext,
-    name: &str,
-) -> Result<T> {
+fn pull_features<T: serde::de::DeserializeOwned>(ctx: &AnalysisContext, name: &str) -> Result<T> {
     let value = ctx
         .previous_features
         .get(name)

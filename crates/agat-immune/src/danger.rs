@@ -215,7 +215,11 @@ pub fn signals_from_features(
             SignalClass::Danger => danger += value,
             SignalClass::Safe => safe += value,
         }
-        contributors.push(SignalContribution { name: name.to_string(), class, value });
+        contributors.push(SignalContribution {
+            name: name.to_string(),
+            class,
+            value,
+        });
     };
 
     // --- PAMP: definitive pathogen-associated patterns -------------
@@ -245,7 +249,11 @@ pub fn signals_from_features(
     if let Some(sf) = static_features {
         let n_high = sf.entropy.high_entropy_regions.len();
         if n_high > 0 {
-            add("high_entropy_region", SignalClass::Danger, (0.25 * n_high as f64).min(0.5));
+            add(
+                "high_entropy_region",
+                SignalClass::Danger,
+                (0.25 * n_high as f64).min(0.5),
+            );
         }
         if sf.entropy.overall > 7.0 {
             add("very_high_overall_entropy", SignalClass::Danger, 0.3);
@@ -269,7 +277,11 @@ pub fn signals_from_features(
     }
     if let Some(p) = poly {
         if p.confidence > 0.0 {
-            add("polymorphic_confidence", SignalClass::Danger, p.confidence * 0.4);
+            add(
+                "polymorphic_confidence",
+                SignalClass::Danger,
+                p.confidence * 0.4,
+            );
         }
     }
     if let Some(a) = ai {
@@ -281,7 +293,11 @@ pub fn signals_from_features(
     if let Some(d) = self_surface_distance {
         if d > 0.0 {
             // Distance from the benign region — saturating contribution.
-            add("far_from_self", SignalClass::Danger, (d / (d + 0.5)).min(0.5));
+            add(
+                "far_from_self",
+                SignalClass::Danger,
+                (d / (d + 0.5)).min(0.5),
+            );
         }
     }
 
@@ -323,7 +339,12 @@ mod tests {
     use super::*;
 
     fn signals(p: f64, d: f64, s: f64) -> DangerSignals {
-        DangerSignals { pamp: p, danger: d, safe: s, contributors: vec![] }
+        DangerSignals {
+            pamp: p,
+            danger: d,
+            safe: s,
+            contributors: vec![],
+        }
     }
 
     #[test]

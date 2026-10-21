@@ -81,7 +81,11 @@ pub fn entropy_curve(bytes: &[u8], window: usize, step: usize) -> EntropyCurve {
     }
 }
 
-fn detect_regions(points: &[EntropyPoint], window: usize, threshold: f64) -> Vec<HighEntropyRegion> {
+fn detect_regions(
+    points: &[EntropyPoint],
+    window: usize,
+    threshold: f64,
+) -> Vec<HighEntropyRegion> {
     let mut out = Vec::new();
     let mut start: Option<u64> = None;
     let mut sum = 0.0;

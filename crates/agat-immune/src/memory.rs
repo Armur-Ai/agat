@@ -115,7 +115,10 @@ pub struct MemoryPool {
 
 impl MemoryPool {
     pub fn new(dim: usize) -> Self {
-        Self { dim, cells: Vec::new() }
+        Self {
+            dim,
+            cells: Vec::new(),
+        }
     }
 
     pub fn is_empty(&self) -> bool {

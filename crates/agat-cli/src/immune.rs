@@ -67,8 +67,7 @@ pub fn cmd_self_build(inputs: Vec<String>, k: usize, store: &Store) -> Result<()
         bail!("no usable benign antigens — analyze the benign samples first");
     }
 
-    let labelled: Vec<(&str, &Antigen)> =
-        owned.iter().map(|(id, a)| (id.as_str(), a)).collect();
+    let labelled: Vec<(&str, &Antigen)> = owned.iter().map(|(id, a)| (id.as_str(), a)).collect();
     let model = SelfModel::build(&labelled, k);
     store.put_self_model(SLOT, &serde_json::to_string(&model)?)?;
 
@@ -92,8 +91,8 @@ pub fn cmd_repertoire_generate(
     seed: Option<u64>,
     store: &Store,
 ) -> Result<()> {
-    let self_model =
-        load_self_model(store)?.ok_or_else(|| anyhow::anyhow!("no self-model yet — run `agat self build` first"))?;
+    let self_model = load_self_model(store)?
+        .ok_or_else(|| anyhow::anyhow!("no self-model yet — run `agat self build` first"))?;
 
     let mut cfg = NsaConfig::default();
     if let Some(m) = max_detectors {
@@ -134,7 +133,10 @@ pub fn cmd_mature(input: String, family: String, store: &Store) -> Result<()> {
     let id = crate::resolve_sample_id(&input, store)?;
     let map = feature_map(store, &id)?;
     if map.is_empty() {
-        bail!("sample {} has no analyzer features — run `agat analyze` first", id.short());
+        bail!(
+            "sample {} has no analyzer features — run `agat analyze` first",
+            id.short()
+        );
     }
     let antigen = antigen_from_map(&map);
 
@@ -151,7 +153,11 @@ pub fn cmd_mature(input: String, family: String, store: &Store) -> Result<()> {
     println!("clonal selection on {} → family '{}'", id.short(), m.family);
     println!(
         "  {} memory cell for the family ({} variant{} incorporated)",
-        if m.new_cell { "formed a new" } else { "reinforced the" },
+        if m.new_cell {
+            "formed a new"
+        } else {
+            "reinforced the"
+        },
         m.variants,
         if m.variants == 1 { "" } else { "s" }
     );
@@ -220,14 +226,24 @@ pub fn print_report(r: &ScanResult) {
 
     // --- recognition axis ------------------------------------------
     let fam = r.recognition.known_families;
-    println!("\nrecognition  ({fam} known famil{})", if fam == 1 { "y" } else { "ies" });
+    println!(
+        "\nrecognition  ({fam} known famil{})",
+        if fam == 1 { "y" } else { "ies" }
+    );
     println!("  verdict      {}", r.recognition.verdict);
-    println!("  family       {}", r.recognition.family.as_deref().unwrap_or("-"));
+    println!(
+        "  family       {}",
+        r.recognition.family.as_deref().unwrap_or("-")
+    );
     println!("  affinity     {:.3}", r.recognition.affinity);
     println!("  bound detectors {}", r.recognition.bound_detectors);
     println!(
         "  secondary response {}",
-        if r.recognition.secondary_response { "yes (memory cell)" } else { "no" }
+        if r.recognition.secondary_response {
+            "yes (memory cell)"
+        } else {
+            "no"
+        }
     );
     if let Some(d) = r.recognition.self_surface_distance {
         println!("  distance from self  {:+.3}", d);
@@ -307,8 +323,17 @@ pub fn print_table(results: &[ScanResult]) {
         if family.chars().count() > 14 {
             family = family.chars().take(13).collect::<String>() + "…";
         }
-        let name = r.sample.name.clone().unwrap_or_else(|| r.sample.short.clone());
-        let policy = r.verdict.policy.as_deref().map(|p| format!("  [{p}]")).unwrap_or_default();
+        let name = r
+            .sample
+            .name
+            .clone()
+            .unwrap_or_else(|| r.sample.short.clone());
+        let policy = r
+            .verdict
+            .policy
+            .as_deref()
+            .map(|p| format!("  [{p}]"))
+            .unwrap_or_default();
         println!(
             "{} {:<14} {:>8}  {:<16} {}{}",
             paint(&format!("{label:<11}"), sev, color),

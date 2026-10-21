@@ -211,7 +211,10 @@ mod tests {
     #[test]
     fn operands_canonicalize() {
         let mut r = RegisterRenamer::new();
-        assert_eq!(canonicalize_operands("byte ptr [rsi],42h", &mut r), "byteptr[R0],IMM");
+        assert_eq!(
+            canonicalize_operands("byte ptr [rsi],42h", &mut r),
+            "byteptr[R0],IMM"
+        );
         // Reset renamer for a fresh function
         let mut r = RegisterRenamer::new();
         assert_eq!(canonicalize_operands("[rsp+8]", &mut r), "[rsp+IMM]");

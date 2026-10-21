@@ -202,11 +202,7 @@ impl ScanResult {
     ///
     /// `recognized` is the recognition axis; `danger_dangerous` and
     /// `danger_ambiguous` describe the danger context.
-    pub fn fuse(
-        recognized: bool,
-        danger_dangerous: bool,
-        danger_ambiguous: bool,
-    ) -> Verdict {
+    pub fn fuse(recognized: bool, danger_dangerous: bool, danger_ambiguous: bool) -> Verdict {
         let (severity, summary) = match (recognized, danger_dangerous, danger_ambiguous) {
             (true, true, _) => (
                 Severity::Malicious,
@@ -230,7 +226,11 @@ impl ScanResult {
                 "within self / unrecognized — no action".to_string(),
             ),
         };
-        Verdict { severity, summary, policy: None }
+        Verdict {
+            severity,
+            summary,
+            policy: None,
+        }
     }
 }
 
@@ -241,15 +241,30 @@ mod tests {
     #[test]
     fn fusion_covers_every_axis_combination() {
         // non-self + dangerous ⇒ the one "act now" verdict.
-        assert_eq!(ScanResult::fuse(true, true, false).severity, Severity::Malicious);
+        assert_eq!(
+            ScanResult::fuse(true, true, false).severity,
+            Severity::Malicious
+        );
         // non-self + ambiguous ⇒ triage.
-        assert_eq!(ScanResult::fuse(true, false, true).severity, Severity::Suspicious);
+        assert_eq!(
+            ScanResult::fuse(true, false, true).severity,
+            Severity::Suspicious
+        );
         // non-self + clear ⇒ false-positive guard.
-        assert_eq!(ScanResult::fuse(true, false, false).severity, Severity::Review);
+        assert_eq!(
+            ScanResult::fuse(true, false, false).severity,
+            Severity::Review
+        );
         // within self but dangerous ⇒ review the anomaly.
-        assert_eq!(ScanResult::fuse(false, true, false).severity, Severity::Review);
+        assert_eq!(
+            ScanResult::fuse(false, true, false).severity,
+            Severity::Review
+        );
         // within self, nothing notable ⇒ clean.
-        assert_eq!(ScanResult::fuse(false, false, false).severity, Severity::Clean);
+        assert_eq!(
+            ScanResult::fuse(false, false, false).severity,
+            Severity::Clean
+        );
     }
 
     #[test]
@@ -259,7 +274,12 @@ mod tests {
         assert_eq!(Severity::Suspicious.exit_code(), 2);
         assert_eq!(Severity::Malicious.exit_code(), 3);
         // 1 is reserved for tool errors and must never be a verdict code.
-        for s in [Severity::Clean, Severity::Review, Severity::Suspicious, Severity::Malicious] {
+        for s in [
+            Severity::Clean,
+            Severity::Review,
+            Severity::Suspicious,
+            Severity::Malicious,
+        ] {
             assert_ne!(s.exit_code(), 1);
         }
     }

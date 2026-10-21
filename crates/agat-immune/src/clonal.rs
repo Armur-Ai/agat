@@ -261,7 +261,10 @@ mod tests {
     }
 
     fn recognize_against_memory(memory: &MemoryPool, probe: &Antigen) -> crate::Recognition {
-        let rep = Repertoire { dim: memory.dim, detectors: memory.detectors() };
+        let rep = Repertoire {
+            dim: memory.dim,
+            detectors: memory.detectors(),
+        };
         recognize(probe, &rep, None)
     }
 
@@ -304,10 +307,16 @@ mod tests {
         }
 
         // Started unable to recognize the held-out variant...
-        assert!(!recognized[0], "one variant should not yet cover the held-out variant");
+        assert!(
+            !recognized[0],
+            "one variant should not yet cover the held-out variant"
+        );
         // ...ended recognizing it, attributed to the family, via memory.
         let final_r = recognize_against_memory(&memory, &ag(&held_out));
-        assert!(final_r.recognized, "held-out variant should be recognized after maturation");
+        assert!(
+            final_r.recognized,
+            "held-out variant should be recognized after maturation"
+        );
         assert_eq!(final_r.family.as_deref(), Some("famA"));
         assert!(final_r.from_memory);
 
@@ -319,7 +328,10 @@ mod tests {
 
         // No overgeneralization: a far-off different family stays unseen.
         let other = recognize_against_memory(&memory, &ag(&other_family));
-        assert!(!other.recognized, "a different family must not be swallowed by famA's memory");
+        assert!(
+            !other.recognized,
+            "a different family must not be swallowed by famA's memory"
+        );
     }
 
     #[test]
@@ -333,6 +345,9 @@ mod tests {
             mature(&ag(v), "famA", &mut memory, None, &cfg);
         }
         let cells = memory.cells.iter().filter(|c| c.family == "famA").count();
-        assert!(cells <= 1, "per-family memory must respect the cap, got {cells}");
+        assert!(
+            cells <= 1,
+            "per-family memory must respect the cap, got {cells}"
+        );
     }
 }

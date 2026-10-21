@@ -179,7 +179,13 @@ impl App {
         let i = self
             .list_state
             .selected()
-            .map(|i| if i == 0 { self.samples.len() - 1 } else { i - 1 })
+            .map(|i| {
+                if i == 0 {
+                    self.samples.len() - 1
+                } else {
+                    i - 1
+                }
+            })
             .unwrap_or(0);
         self.list_state.select(Some(i));
     }
@@ -236,10 +242,7 @@ impl App {
     }
 }
 
-fn run_loop<B: ratatui::backend::Backend>(
-    terminal: &mut Terminal<B>,
-    app: &mut App,
-) -> Result<()> {
+fn run_loop<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> {
     loop {
         terminal.draw(|f| draw(f, app))?;
         if event::poll(Duration::from_millis(200))? {
@@ -397,7 +400,10 @@ fn draw(f: &mut Frame, app: &App) {
     let footer = Paragraph::new(Line::from(vec![
         Span::styled(" j/k ", Style::default().fg(Color::Black).bg(Color::Gray)),
         Span::raw(" navigate    "),
-        Span::styled(" 1/2/3/4/5/Tab ", Style::default().fg(Color::Black).bg(Color::Gray)),
+        Span::styled(
+            " 1/2/3/4/5/Tab ",
+            Style::default().fg(Color::Black).bg(Color::Gray),
+        ),
         Span::raw(" switch tab    "),
         Span::styled(" q ", Style::default().fg(Color::Black).bg(Color::Gray)),
         Span::raw(" quit "),
@@ -448,7 +454,10 @@ fn build_overview(app: &App) -> Vec<Line<'static>> {
     lines.push(section_header("static analysis"));
     lines.push(kv(
         "format",
-        format!("{} / {} / {}-bit", f.parsed.format, f.parsed.arch, f.parsed.bits),
+        format!(
+            "{} / {} / {}-bit",
+            f.parsed.format, f.parsed.arch, f.parsed.bits
+        ),
     ));
     lines.push(kv("entry", format!("0x{:08x}", f.parsed.entry_point)));
     lines.push(kv("md5", f.hashes.md5.clone()));
@@ -492,8 +501,16 @@ fn build_overview(app: &App) -> Vec<Line<'static>> {
         for sect in f.parsed.sections.iter().take(10) {
             let rwx = format!(
                 "{}{}{}",
-                if sect.characteristics.readable { "R" } else { "-" },
-                if sect.characteristics.writable { "W" } else { "-" },
+                if sect.characteristics.readable {
+                    "R"
+                } else {
+                    "-"
+                },
+                if sect.characteristics.writable {
+                    "W"
+                } else {
+                    "-"
+                },
                 if sect.characteristics.executable {
                     "X"
                 } else {
@@ -656,9 +673,7 @@ fn build_poly(app: &App) -> Vec<Line<'static>> {
     };
 
     let verdict_style = if p.is_polymorphic() {
-        Style::default()
-            .fg(Color::Red)
-            .add_modifier(Modifier::BOLD)
+        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(Color::Green)
     };
@@ -785,10 +800,7 @@ fn build_poly(app: &App) -> Vec<Line<'static>> {
                 };
                 lines.push(Line::from(vec![
                     Span::raw("  "),
-                    Span::styled(
-                        format!("{:?}", trunc),
-                        Style::default().fg(Color::Green),
-                    ),
+                    Span::styled(format!("{:?}", trunc), Style::default().fg(Color::Green)),
                 ]));
             }
         }
@@ -859,7 +871,9 @@ fn build_meta(app: &App) -> Vec<Line<'static>> {
             ),
             Span::styled(
                 cluster_label,
-                Style::default().fg(cluster_color).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(cluster_color)
+                    .add_modifier(Modifier::BOLD),
             ),
         ]),
         kv("blocks", format!("{}", m.block_count)),
@@ -883,7 +897,9 @@ fn build_meta(app: &App) -> Vec<Line<'static>> {
             Span::raw("  "),
             Span::styled(
                 format!("● {}", s.sample.id.short()),
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::raw("  "),
             Span::styled(
@@ -894,10 +910,7 @@ fn build_meta(app: &App) -> Vec<Line<'static>> {
                     .unwrap_or_else(|| "-".into()),
                 Style::default().fg(Color::Green),
             ),
-            Span::styled(
-                "  (this sample)",
-                Style::default().fg(Color::DarkGray),
-            ),
+            Span::styled("  (this sample)", Style::default().fg(Color::DarkGray)),
         ]));
         for other in cluster.iter().take(8) {
             lines.push(Line::from(vec![
@@ -981,23 +994,14 @@ fn build_ai(app: &App) -> Vec<Line<'static>> {
             ),
         ]),
         kv("combined", format!("{:.2}", a.combined_score)),
-        kv(
-            "stylometry",
-            format!("{:.2}", a.signal_scores.stylometry),
-        ),
-        kv(
-            "artifacts",
-            format!("{:.2}", a.signal_scores.artifact_scan),
-        ),
+        kv("stylometry", format!("{:.2}", a.signal_scores.stylometry)),
+        kv("artifacts", format!("{:.2}", a.signal_scores.artifact_scan)),
         kv(
             "perplexity",
             match (&a.perplexity_result, a.signal_scores.perplexity) {
-                (Some(r), Some(s)) => format!(
-                    "{:.2}  (raw {:.1} via {})",
-                    s,
-                    r.value,
-                    r.backend.label()
-                ),
+                (Some(r), Some(s)) => {
+                    format!("{:.2}  (raw {:.1} via {})", s, r.value, r.backend.label())
+                }
                 (Some(r), None) => format!("raw {:.1} via {}", r.value, r.backend.label()),
                 _ => "(corpus too small)".to_string(),
             },
@@ -1034,18 +1038,12 @@ fn build_ai(app: &App) -> Vec<Line<'static>> {
         "  opcode div",
         format!("{:.3} bits", s.opcode_diversity),
     ));
-    lines.push(kv(
-        "  mean block",
-        format!("{:.2} ins", s.mean_block_size),
-    ));
+    lines.push(kv("  mean block", format!("{:.2} ins", s.mean_block_size)));
     lines.push(kv(
         "  mean strlen",
         format!("{:.1} chars", s.mean_string_length),
     ));
-    lines.push(kv(
-        "  underscore",
-        format!("{:.3}", s.underscore_density),
-    ));
+    lines.push(kv("  underscore", format!("{:.3}", s.underscore_density)));
     lines.push(kv("  long strs", format!("{}", s.long_string_count)));
 
     if !s.llm_idiom_hits.is_empty() {
@@ -1065,10 +1063,7 @@ fn build_ai(app: &App) -> Vec<Line<'static>> {
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::raw("  →  "),
-                Span::styled(
-                    format!("{:?}", ctx_trim),
-                    Style::default().fg(Color::White),
-                ),
+                Span::styled(format!("{:?}", ctx_trim), Style::default().fg(Color::White)),
             ]));
         }
     }
@@ -1087,10 +1082,7 @@ fn section_header(text: &str) -> Line<'static> {
 
 fn kv(key: &str, value: impl Into<String>) -> Line<'static> {
     Line::from(vec![
-        Span::styled(
-            format!("{:<11}", key),
-            Style::default().fg(Color::DarkGray),
-        ),
+        Span::styled(format!("{:<11}", key), Style::default().fg(Color::DarkGray)),
         Span::raw(value.into()),
     ])
 }

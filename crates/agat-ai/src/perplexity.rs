@@ -66,9 +66,7 @@ pub fn compute(strings: &[ExtractedString]) -> Option<PerplexityResult> {
         if let Some(real) = try_llama_cpp(&corpus) {
             return Some(real);
         }
-        tracing::warn!(
-            "AGAT_LLAMA_BIN set but invocation failed; falling back to approximation"
-        );
+        tracing::warn!("AGAT_LLAMA_BIN set but invocation failed; falling back to approximation");
     }
     Some(PerplexityResult {
         value: approximate(&corpus),
@@ -114,9 +112,12 @@ fn try_llama_cpp(corpus: &str) -> Option<PerplexityResult> {
     let tmp = write_temp_corpus(corpus).ok()?;
 
     let out = Command::new(&bin)
-        .arg("-m").arg(&model)
-        .arg("-f").arg(&tmp)
-        .arg("-c").arg("512")
+        .arg("-m")
+        .arg(&model)
+        .arg("-f")
+        .arg(&tmp)
+        .arg("-c")
+        .arg("512")
         .arg("--no-warmup")
         .output()
         .ok()?;
@@ -179,9 +180,9 @@ fn parse_perplexity(text: &str) -> Option<f64> {
         if !(lower.contains("ppl") || lower.contains("perplexity")) {
             continue;
         }
-        for tok in line.split(|c: char| {
-            !(c.is_ascii_digit() || c == '.' || c == '-' || c == 'e' || c == 'E')
-        }) {
+        for tok in line
+            .split(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-' || c == 'e' || c == 'E'))
+        {
             if let Ok(v) = tok.parse::<f64>() {
                 if v > 0.5 && v < 1e8 {
                     return Some(v);
@@ -264,7 +265,10 @@ mod tests {
         assert!(
             n.value < r.value,
             "expected natural < random; got natural={:.2} ({} chars) random={:.2} ({} chars)",
-            n.value, n.corpus_chars, r.value, r.corpus_chars
+            n.value,
+            n.corpus_chars,
+            r.value,
+            r.corpus_chars
         );
         assert_eq!(n.backend, PerplexityBackend::Approximation);
     }

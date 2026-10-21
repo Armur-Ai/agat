@@ -56,7 +56,10 @@ impl SelfModel {
     /// (excluding itself). Identical samples (distance 0) are skipped
     /// when sizing radii so duplicates don't collapse a ball to zero.
     pub fn build<S: AsRef<str>>(antigens: &[(S, &Antigen)], k: usize) -> SelfModel {
-        let sigs: Vec<&[f64]> = antigens.iter().map(|(_, a)| a.signature.as_slice()).collect();
+        let sigs: Vec<&[f64]> = antigens
+            .iter()
+            .map(|(_, a)| a.signature.as_slice())
+            .collect();
         let dim = sigs.first().map(|s| s.len()).unwrap_or(0);
         let k = k.max(1);
 
@@ -91,7 +94,12 @@ impl SelfModel {
             points.iter().map(|p| p.radius).sum::<f64>() / points.len() as f64
         };
 
-        SelfModel { dim, k, points, mean_radius }
+        SelfModel {
+            dim,
+            k,
+            points,
+            mean_radius,
+        }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -184,8 +192,11 @@ mod tests {
     #[test]
     fn tolerance_widens_the_self_region() {
         let benign = vec![ag(&[0.0, 0.0]), ag(&[0.1, 0.0]), ag(&[0.0, 0.1])];
-        let labelled: Vec<(String, &Antigen)> =
-            benign.iter().enumerate().map(|(i, a)| (i.to_string(), a)).collect();
+        let labelled: Vec<(String, &Antigen)> = benign
+            .iter()
+            .enumerate()
+            .map(|(i, a)| (i.to_string(), a))
+            .collect();
         let model = SelfModel::build(&labelled, 1);
         let probe = [0.4, 0.0];
         // Outside with zero tolerance...
@@ -197,8 +208,11 @@ mod tests {
     #[test]
     fn serializes_round_trip() {
         let benign = vec![ag(&[0.1, 0.2]), ag(&[0.2, 0.1])];
-        let labelled: Vec<(String, &Antigen)> =
-            benign.iter().enumerate().map(|(i, a)| (i.to_string(), a)).collect();
+        let labelled: Vec<(String, &Antigen)> = benign
+            .iter()
+            .enumerate()
+            .map(|(i, a)| (i.to_string(), a))
+            .collect();
         let model = SelfModel::build(&labelled, 1);
         let json = serde_json::to_string(&model).unwrap();
         let back: SelfModel = serde_json::from_str(&json).unwrap();

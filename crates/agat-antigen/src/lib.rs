@@ -65,7 +65,11 @@ mod tests {
             listing_preview: vec![],
             blocks: vec![],
             edges: (0..edges)
-                .map(|i| Edge { from: i, to: i + 1, kind: EdgeKind::Fallthrough })
+                .map(|i| Edge {
+                    from: i,
+                    to: i + 1,
+                    kind: EdgeKind::Fallthrough,
+                })
                 .collect(),
             opcode_histogram: hist,
         }
@@ -100,11 +104,19 @@ mod tests {
         // share opcode mix and most canonical blocks (register renaming
         // changes neither), differing only in one block / a stray op.
         let a1 = antigen(
-            &disasm(&[("mov", 4), ("xor", 3), ("inc", 2), ("cmp", 1), ("jne", 1)], 3, 3),
+            &disasm(
+                &[("mov", 4), ("xor", 3), ("inc", 2), ("cmp", 1), ("jne", 1)],
+                3,
+                3,
+            ),
             &meta(&["b_load", "b_xor", "b_loop"]),
         );
         let a2 = antigen(
-            &disasm(&[("mov", 5), ("xor", 3), ("inc", 2), ("cmp", 1), ("jne", 1)], 3, 3),
+            &disasm(
+                &[("mov", 5), ("xor", 3), ("inc", 2), ("cmp", 1), ("jne", 1)],
+                3,
+                3,
+            ),
             &meta(&["b_load", "b_xor", "b_loop2"]), // one block differs
         );
 
@@ -141,7 +153,10 @@ mod tests {
         let a = antigen(&df, &mf);
         let b = antigen(&df, &mf);
         let aff = affinity(&a, &b, &AffinityConfig::default());
-        assert!((aff - 1.0).abs() < 1e-9, "identical antigens should have affinity 1, got {aff}");
+        assert!(
+            (aff - 1.0).abs() < 1e-9,
+            "identical antigens should have affinity 1, got {aff}"
+        );
     }
 
     #[test]

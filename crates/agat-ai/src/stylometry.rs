@@ -111,11 +111,7 @@ pub fn compute(sf: &StaticFeatures, df: &DisasmFeatures) -> StylometricFeatures 
         let lower = s.value.to_ascii_lowercase();
         for idiom in LLM_IDIOMS {
             if lower.contains(&idiom.to_ascii_lowercase()) {
-                let context: String = s
-                    .value
-                    .chars()
-                    .take(70)
-                    .collect::<String>();
+                let context: String = s.value.chars().take(70).collect::<String>();
                 llm_idiom_hits.push(IdiomHit {
                     idiom: (*idiom).to_string(),
                     context,
@@ -155,11 +151,11 @@ fn histogram_entropy(histogram: &std::collections::HashMap<String, usize>) -> f6
 #[cfg(test)]
 mod tests {
     use super::*;
+    use agat_static::entropy::EntropyCurve;
     use agat_static::features::StringSummary;
     use agat_static::hashes::Hashes;
     use agat_static::parse::{Arch, BinaryFormat, ParsedBinary};
     use agat_static::strings::{ExtractedString, StringEncoding};
-    use agat_static::entropy::EntropyCurve;
 
     fn fake_static(strings: Vec<&str>) -> StaticFeatures {
         StaticFeatures {
@@ -228,7 +224,11 @@ mod tests {
         ]);
         let df = fake_disasm();
         let s = compute(&sf, &df);
-        assert!(s.llm_idiom_hits.len() >= 3, "got {}", s.llm_idiom_hits.len());
+        assert!(
+            s.llm_idiom_hits.len() >= 3,
+            "got {}",
+            s.llm_idiom_hits.len()
+        );
     }
 
     #[test]

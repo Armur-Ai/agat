@@ -153,7 +153,12 @@ mod tests {
         }
     }
 
-    fn detector(center: &[f64], radius: f64, family: Option<&str>, origin: DetectorOrigin) -> Detector {
+    fn detector(
+        center: &[f64],
+        radius: f64,
+        family: Option<&str>,
+        origin: DetectorOrigin,
+    ) -> Detector {
         let mut d = Detector::new(center.to_vec(), radius, origin);
         d.family = family.map(|s| s.to_string());
         d
@@ -162,8 +167,12 @@ mod tests {
     #[test]
     fn binds_and_reports_affinity() {
         let mut rep = Repertoire::new(2);
-        rep.detectors
-            .push(detector(&[1.0, 1.0], 0.5, None, DetectorOrigin::NegativeSelection));
+        rep.detectors.push(detector(
+            &[1.0, 1.0],
+            0.5,
+            None,
+            DetectorOrigin::NegativeSelection,
+        ));
         let r = recognize(&ag(&[1.0, 1.0]), &rep, None);
         assert!(r.recognized);
         assert_eq!(r.bound_count, 1);
@@ -174,8 +183,12 @@ mod tests {
     #[test]
     fn unrecognized_when_far() {
         let mut rep = Repertoire::new(2);
-        rep.detectors
-            .push(detector(&[1.0, 1.0], 0.3, None, DetectorOrigin::NegativeSelection));
+        rep.detectors.push(detector(
+            &[1.0, 1.0],
+            0.3,
+            None,
+            DetectorOrigin::NegativeSelection,
+        ));
         let r = recognize(&ag(&[0.0, 0.0]), &rep, None);
         assert!(!r.recognized);
         assert_eq!(r.verdict(), "self / unrecognized");
@@ -187,12 +200,24 @@ mod tests {
         // memory cell also for "alpha" — all bind. Family must come from
         // the memory cell, and from_memory must be true.
         let mut rep = Repertoire::new(2);
-        rep.detectors
-            .push(detector(&[0.0, 0.0], 1.0, None, DetectorOrigin::NegativeSelection));
-        rep.detectors
-            .push(detector(&[0.0, 0.0], 0.9, Some("alpha"), DetectorOrigin::Clone));
-        rep.detectors
-            .push(detector(&[0.0, 0.0], 0.8, Some("alpha"), DetectorOrigin::Memory));
+        rep.detectors.push(detector(
+            &[0.0, 0.0],
+            1.0,
+            None,
+            DetectorOrigin::NegativeSelection,
+        ));
+        rep.detectors.push(detector(
+            &[0.0, 0.0],
+            0.9,
+            Some("alpha"),
+            DetectorOrigin::Clone,
+        ));
+        rep.detectors.push(detector(
+            &[0.0, 0.0],
+            0.8,
+            Some("alpha"),
+            DetectorOrigin::Memory,
+        ));
         let r = recognize(&ag(&[0.05, 0.0]), &rep, None);
         assert!(r.recognized);
         assert_eq!(r.family.as_deref(), Some("alpha"));
@@ -203,12 +228,19 @@ mod tests {
     #[test]
     fn surface_distance_is_reported_with_self_model() {
         let benign = [ag(&[0.1, 0.1]), ag(&[0.12, 0.08])];
-        let labelled: Vec<(String, &Antigen)> =
-            benign.iter().enumerate().map(|(i, a)| (i.to_string(), a)).collect();
+        let labelled: Vec<(String, &Antigen)> = benign
+            .iter()
+            .enumerate()
+            .map(|(i, a)| (i.to_string(), a))
+            .collect();
         let sm = SelfModel::build(&labelled, 1);
         let mut rep = Repertoire::new(2);
-        rep.detectors
-            .push(detector(&[0.9, 0.9], 0.4, None, DetectorOrigin::NegativeSelection));
+        rep.detectors.push(detector(
+            &[0.9, 0.9],
+            0.4,
+            None,
+            DetectorOrigin::NegativeSelection,
+        ));
         let r = recognize(&ag(&[0.9, 0.9]), &rep, Some(&sm));
         assert!(r.recognized);
         assert!(r.self_surface_distance.unwrap() > 0.5);

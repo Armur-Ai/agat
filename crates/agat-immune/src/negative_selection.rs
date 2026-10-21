@@ -102,7 +102,9 @@ pub fn generate(self_model: &SelfModel, dim: usize, cfg: &NsaConfig) -> Repertoi
         // Censor: how far is the candidate from the self surface? With
         // no self at all, treat everything as non-self with a generous
         // radius.
-        let surface = self_model.surface_distance(&center).unwrap_or(cfg.hi - cfg.lo);
+        let surface = self_model
+            .surface_distance(&center)
+            .unwrap_or(cfg.hi - cfg.lo);
         if surface <= cfg.self_tolerance {
             // Reacts to self → eliminated, exactly like a thymic T-cell.
             continue;
@@ -125,9 +127,11 @@ pub fn generate(self_model: &SelfModel, dim: usize, cfg: &NsaConfig) -> Repertoi
             continue;
         }
         covered_streak = 0;
-        repertoire
-            .detectors
-            .push(Detector::new(center, radius, DetectorOrigin::NegativeSelection));
+        repertoire.detectors.push(Detector::new(
+            center,
+            radius,
+            DetectorOrigin::NegativeSelection,
+        ));
     }
 
     repertoire
@@ -157,8 +161,11 @@ mod tests {
             [0.09, 0.11, 0.08],
         ];
         let antigens: Vec<Antigen> = pts.iter().map(|p| ag(p)).collect();
-        let labelled: Vec<(String, &Antigen)> =
-            antigens.iter().enumerate().map(|(i, a)| (format!("s{i}"), a)).collect();
+        let labelled: Vec<(String, &Antigen)> = antigens
+            .iter()
+            .enumerate()
+            .map(|(i, a)| (format!("s{i}"), a))
+            .collect();
         SelfModel::build(&labelled, 2)
     }
 
@@ -212,7 +219,12 @@ mod tests {
     fn no_self_means_all_non_self() {
         // An empty self-model: nothing is self, so detectors can sit
         // anywhere and generation still terminates.
-        let empty = SelfModel { dim: 3, k: 1, points: vec![], mean_radius: 0.0 };
+        let empty = SelfModel {
+            dim: 3,
+            k: 1,
+            points: vec![],
+            mean_radius: 0.0,
+        };
         let rep = generate(&empty, 3, &NsaConfig::default());
         assert!(!rep.is_empty());
     }

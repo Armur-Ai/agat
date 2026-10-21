@@ -48,13 +48,23 @@ fn load_dir(dir: &Path) -> Result<Vec<Sample>> {
     for p in paths {
         let bytes = std::fs::read(&p)?;
         let (sample, features) = analyze_bytes(&bytes, None)?;
-        out.push(Sample { id: sample.id, features });
+        out.push(Sample {
+            id: sample.id,
+            features,
+        });
     }
     Ok(out)
 }
 
 fn get(cfg: &AntigenConfig, i: usize) -> f64 {
-    [cfg.w_opcode, cfg.w_block, cfg.w_struct, cfg.w_entropy, cfg.w_style, cfg.w_imports][i]
+    [
+        cfg.w_opcode,
+        cfg.w_block,
+        cfg.w_struct,
+        cfg.w_entropy,
+        cfg.w_style,
+        cfg.w_imports,
+    ][i]
 }
 
 fn set(cfg: &mut AntigenConfig, i: usize, v: f64) {
@@ -76,12 +86,21 @@ fn train(cfg: &AntigenConfig, benign: &[Sample], family: &[Sample]) -> ImmuneMod
         .collect();
     let labelled: Vec<(&str, &Antigen)> = antigens.iter().map(|(id, a)| (id.as_str(), a)).collect();
     let self_model = SelfModel::build(&labelled, 3);
-    let nsa = NsaConfig { seed: 1, ..NsaConfig::default() };
+    let nsa = NsaConfig {
+        seed: 1,
+        ..NsaConfig::default()
+    };
     let repertoire = generate_repertoire(&self_model, self_model.dim, &nsa);
     let mut memory = MemoryPool::new(self_model.dim);
     for s in family {
         let a = Antigen::from_feature_map(&s.features, cfg);
-        mature(&a, FAMILY, &mut memory, Some(&repertoire), &ClonalConfig::default());
+        mature(
+            &a,
+            FAMILY,
+            &mut memory,
+            Some(&repertoire),
+            &ClonalConfig::default(),
+        );
     }
     ImmuneModel::from_parts(repertoire, &memory, Some(self_model)).with_antigen_config(*cfg)
 }
@@ -101,7 +120,12 @@ struct Outcome {
     severities: Vec<Severity>,
 }
 
-fn evaluate(label: String, cfg: &AntigenConfig, c: &Corpus, baseline: Option<&[Severity]>) -> Result<Outcome> {
+fn evaluate(
+    label: String,
+    cfg: &AntigenConfig,
+    c: &Corpus,
+    baseline: Option<&[Severity]>,
+) -> Result<Outcome> {
     let model = train(cfg, &c.train_benign, &c.train_family);
     let mut severities = Vec::new();
     let mut detected = 0;
@@ -186,7 +210,12 @@ fn main() -> Result<()> {
         for factor in [0.5, 2.0] {
             let mut cfg = base_cfg;
             set(&mut cfg, i, get(&base_cfg, i) * factor);
-            runs.push(evaluate(format!("{} x{factor}", WEIGHTS[i]), &cfg, &c, Some(&base.severities))?);
+            runs.push(evaluate(
+                format!("{} x{factor}", WEIGHTS[i]),
+                &cfg,
+                &c,
+                Some(&base.severities),
+            )?);
         }
     }
     // All six at once, each log-uniform in [0.5, 2].
@@ -194,9 +223,18 @@ fn main() -> Result<()> {
     for k in 0..random {
         let mut cfg = base_cfg;
         for i in 0..WEIGHTS.len() {
-            set(&mut cfg, i, get(&base_cfg, i) * 2f64.powf(next(&mut state) * 2.0 - 1.0));
+            set(
+                &mut cfg,
+                i,
+                get(&base_cfg, i) * 2f64.powf(next(&mut state) * 2.0 - 1.0),
+            );
         }
-        runs.push(evaluate(format!("random #{}", k + 1), &cfg, &c, Some(&base.severities))?);
+        runs.push(evaluate(
+            format!("random #{}", k + 1),
+            &cfg,
+            &c,
+            Some(&base.severities),
+        )?);
     }
 
     let min = |f: fn(&Outcome) -> f64| runs.iter().map(f).fold(f64::INFINITY, f64::min);
@@ -229,7 +267,10 @@ fn main() -> Result<()> {
         c.heldout_family.len(),
         c.heldout_benign.len()
     );
-    println!("\n{:<16} {:>8} {:>10} {:>10} {:>9} {:>9}", "weights", "detect", "FP any", "FP malic", "FP fam", "flipped");
+    println!(
+        "\n{:<16} {:>8} {:>10} {:>10} {:>9} {:>9}",
+        "weights", "detect", "FP any", "FP malic", "FP fam", "flipped"
+    );
     let row = |o: &Outcome| {
         println!(
             "{:<16} {:>7.1}% {:>9.1}% {:>9.1}% {:>8.1}% {:>8.1}%",

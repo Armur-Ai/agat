@@ -321,9 +321,8 @@ impl Store {
 
     fn put_blob(&self, table: &str, col: &str, name: &str, json: &str) -> Result<()> {
         let now = Utc::now().to_rfc3339();
-        let sql = format!(
-            "INSERT OR REPLACE INTO {table} (name, {col}, created_at) VALUES (?1, ?2, ?3)"
-        );
+        let sql =
+            format!("INSERT OR REPLACE INTO {table} (name, {col}, created_at) VALUES (?1, ?2, ?3)");
         self.conn
             .execute(&sql, params![name, json, now])
             .map_err(db_err)?;
@@ -419,24 +418,41 @@ mod tests {
         let store = Store::open_in_memory().unwrap();
         assert!(store.get_self_model("default").unwrap().is_none());
         store
-            .put_self_model("default", r#"{"dim":2,"k":1,"points":[],"mean_radius":0.0}"#)
+            .put_self_model(
+                "default",
+                r#"{"dim":2,"k":1,"points":[],"mean_radius":0.0}"#,
+            )
             .unwrap();
         let got = store.get_self_model("default").unwrap().unwrap();
         assert!(got.contains("\"dim\":2"));
         // Replace semantics.
         store.put_self_model("default", r#"{"dim":3}"#).unwrap();
-        assert!(store.get_self_model("default").unwrap().unwrap().contains("\"dim\":3"));
+        assert!(store
+            .get_self_model("default")
+            .unwrap()
+            .unwrap()
+            .contains("\"dim\":3"));
     }
 
     #[test]
     fn repertoire_and_memory_round_trip() {
         let store = Store::open_in_memory().unwrap();
         assert!(store.get_repertoire("default").unwrap().is_none());
-        store.put_repertoire("default", r#"{"dim":4,"detectors":[]}"#).unwrap();
-        assert!(store.get_repertoire("default").unwrap().unwrap().contains("\"dim\":4"));
+        store
+            .put_repertoire("default", r#"{"dim":4,"detectors":[]}"#)
+            .unwrap();
+        assert!(store
+            .get_repertoire("default")
+            .unwrap()
+            .unwrap()
+            .contains("\"dim\":4"));
 
         assert!(store.get_memory("default").unwrap().is_none());
         store.put_memory("default", r#"{"cells":[]}"#).unwrap();
-        assert!(store.get_memory("default").unwrap().unwrap().contains("cells"));
+        assert!(store
+            .get_memory("default")
+            .unwrap()
+            .unwrap()
+            .contains("cells"));
     }
 }

@@ -45,7 +45,10 @@ pub fn classify(mnemonic: &str) -> usize {
     if m == "jmp" {
         return 7;
     }
-    if (m.starts_with('j') && m != "jmp") || m.starts_with("loop") || m == "jcxz" || m == "jecxz"
+    if (m.starts_with('j') && m != "jmp")
+        || m.starts_with("loop")
+        || m == "jcxz"
+        || m == "jecxz"
         || m == "jrcxz"
     {
         return 8;
@@ -82,7 +85,10 @@ pub fn classify(mnemonic: &str) -> usize {
             || m.starts_with("lods")
             || m.starts_with("scas")
             || m.starts_with("cmps")
-            || m.starts_with("rep") => 13,
+            || m.starts_with("rep") =>
+        {
+            13
+        }
         // 14 — SIMD / x87 floating point
         m if m.starts_with('p')      // packed integer SIMD (paddb, pxor, ...)
             || m.starts_with('v')    // AVX VEX-encoded forms
@@ -92,7 +98,10 @@ pub fn classify(mnemonic: &str) -> usize {
             || m.ends_with("ss")
             || m.ends_with("sd")
             || m.starts_with("xmm")
-            || m.starts_with("cvt") => 14,
+            || m.starts_with("cvt") =>
+        {
+            14
+        }
         // 15 — everything else (int, syscall, cpuid, hlt, in/out, ...)
         _ => 15,
     }

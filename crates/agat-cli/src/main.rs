@@ -225,9 +225,16 @@ fn main() -> Result<()> {
     let store = Store::open(&store_path).context("opening store")?;
 
     match cli.command {
-        Cmd::Ingest { paths } => cmd_ingest(paths, vault.as_ref().expect("ingest needs a vault"), &store),
+        Cmd::Ingest { paths } => {
+            cmd_ingest(paths, vault.as_ref().expect("ingest needs a vault"), &store)
+        }
         Cmd::List => cmd_list(&store),
-        Cmd::Analyze { id, force } => cmd_analyze(id, force, vault.as_ref().expect("analyze needs a vault"), &store),
+        Cmd::Analyze { id, force } => cmd_analyze(
+            id,
+            force,
+            vault.as_ref().expect("analyze needs a vault"),
+            &store,
+        ),
         Cmd::Show {
             id,
             disasm,
@@ -258,7 +265,11 @@ fn main() -> Result<()> {
             drop(store);
             std::process::exit(fail_on.exit_code(severity));
         }
-        Cmd::Scan { paths, ingest: _, out } => {
+        Cmd::Scan {
+            paths,
+            ingest: _,
+            out,
+        } => {
             let (format, fail_on) = out.resolve(&cfg);
             let worst = cmd_scan(&paths, format, cfg.policy()?, vault.as_ref(), &store)?;
             drop(store);
@@ -299,8 +310,11 @@ pub(crate) fn resolve_sample_id(input: &str, store: &Store) -> Result<SampleId> 
         0 => anyhow::bail!("no sample matching prefix '{}'", input),
         1 => Ok(matches[0].sample.id),
         n => {
-            let preview: Vec<String> =
-                matches.iter().take(5).map(|s| s.sample.id.short()).collect();
+            let preview: Vec<String> = matches
+                .iter()
+                .take(5)
+                .map(|s| s.sample.id.short())
+                .collect();
             anyhow::bail!(
                 "ambiguous prefix '{}' matches {} samples (e.g. {})",
                 input,
@@ -543,7 +557,8 @@ fn run_analyzers(
         for dep in analyzer.dependencies() {
             if !ctx.previous_features.contains_key(*dep) {
                 if let Some(rec) = store.get_features(id, dep)? {
-                    ctx.previous_features.insert((*dep).to_string(), rec.features);
+                    ctx.previous_features
+                        .insert((*dep).to_string(), rec.features);
                 } else {
                     tracing::warn!(
                         "analyzer {} requires upstream '{}' which has no features yet",
@@ -650,8 +665,8 @@ fn cmd_show(
         return Ok(());
     };
 
-    let feat: StaticFeatures = serde_json::from_value(rec.features)
-        .context("decoding static analyzer features")?;
+    let feat: StaticFeatures =
+        serde_json::from_value(rec.features).context("decoding static analyzer features")?;
     print_static_features(&feat);
 
     if disasm {
@@ -661,8 +676,8 @@ fn cmd_show(
                 id.short()
             ),
             Some(rec) => {
-                let df: DisasmFeatures = serde_json::from_value(rec.features)
-                    .context("decoding disasm features")?;
+                let df: DisasmFeatures =
+                    serde_json::from_value(rec.features).context("decoding disasm features")?;
                 print_disasm_features(&df);
             }
         }
@@ -766,10 +781,7 @@ fn cmd_divergence(store: &Store) -> Result<()> {
 
     let mut any_divergence = false;
     for (pfp, members) in &groups_vec {
-        let meta_fps: HashSet<String> = members
-            .iter()
-            .filter_map(|r| r.meta_fp.clone())
-            .collect();
+        let meta_fps: HashSet<String> = members.iter().filter_map(|r| r.meta_fp.clone()).collect();
         if members.len() < 2 || meta_fps.len() < 2 {
             continue;
         }
@@ -804,11 +816,7 @@ fn cmd_divergence(store: &Store) -> Result<()> {
                 .map(|s| format!("ai {:.2}", s))
                 .unwrap_or_else(|| "ai  -  ".to_string());
             let prefix = if is_divergent { "  ★" } else { "   " };
-            let suffix = if is_divergent {
-                "  ← divergent"
-            } else {
-                ""
-            };
+            let suffix = if is_divergent { "  ← divergent" } else { "" };
             println!(
                 "{}  {}  cfg {:<16}  {}  {}{}",
                 prefix,
@@ -847,8 +855,8 @@ fn cmd_cluster(store: &Store) -> Result<()> {
     let mut unfingerprinted: Vec<StoredSample> = Vec::new();
     for s in samples {
         if let Some(rec) = store.get_features(&s.sample.id, "meta")? {
-            let mf: MetaFeatures = serde_json::from_value(rec.features)
-                .context("decoding meta features")?;
+            let mf: MetaFeatures =
+                serde_json::from_value(rec.features).context("decoding meta features")?;
             if mf.has_fingerprint() {
                 clusters
                     .entry(mf.cfg_fingerprint.clone())
@@ -888,7 +896,11 @@ fn cmd_cluster(store: &Store) -> Result<()> {
         }
     }
     if !unfingerprinted.is_empty() {
-        println!("\nunfingerprinted ({} sample{}):", unfingerprinted.len(), if unfingerprinted.len() == 1 { "" } else { "s" });
+        println!(
+            "\nunfingerprinted ({} sample{}):",
+            unfingerprinted.len(),
+            if unfingerprinted.len() == 1 { "" } else { "s" }
+        );
         for s in &unfingerprinted {
             println!(
                 "  {}  {}",
@@ -949,7 +961,11 @@ fn print_static_features(f: &StaticFeatures) {
                 "{}{}{}",
                 if s.characteristics.readable { "R" } else { "-" },
                 if s.characteristics.writable { "W" } else { "-" },
-                if s.characteristics.executable { "X" } else { "-" },
+                if s.characteristics.executable {
+                    "X"
+                } else {
+                    "-"
+                },
             );
             println!(
                 "  {:<16}  {}  ent {:>4.2}  {:>8} bytes",
@@ -1013,10 +1029,7 @@ fn print_disasm_features(df: &DisasmFeatures) {
         );
         return;
     }
-    println!(
-        "  arch          {} ({}-bit)",
-        df.arch, df.bitness
-    );
+    println!("  arch          {} ({}-bit)", df.arch, df.bitness);
     println!(
         "  section       {}  (base 0x{:08x}, {} bytes)",
         df.disassembled_section.as_deref().unwrap_or("?"),
@@ -1042,7 +1055,10 @@ fn print_disasm_features(df: &DisasmFeatures) {
     if df.listing_preview.is_empty() {
         return;
     }
-    println!("\n  listing preview (first {} instructions)", df.listing_preview.len().min(40));
+    println!(
+        "\n  listing preview (first {} instructions)",
+        df.listing_preview.len().min(40)
+    );
     for l in df.listing_preview.iter().take(40) {
         let flow_marker = match l.flow {
             FlowKind::Branch => " ↳",
@@ -1089,10 +1105,9 @@ fn print_poly_features(p: &PolyFeatures) {
                     "    entropy boundary at 0x{:08x}  {:.2} → {:.2}",
                     boundary_offset, before_entropy, after_entropy
                 ),
-                Signal::BackwardJumpInPrelude { from, to } => println!(
-                    "    backward jump at 0x{:08x} → 0x{:08x}",
-                    from, to
-                ),
+                Signal::BackwardJumpInPrelude { from, to } => {
+                    println!("    backward jump at 0x{:08x} → 0x{:08x}", from, to)
+                }
                 Signal::DecryptorLoop {
                     op,
                     instruction_address,
@@ -1120,7 +1135,11 @@ fn print_poly_features(p: &PolyFeatures) {
             "  region      0x{:08x}..0x{:08x}  ({} bytes)",
             rec.region_start, rec.region_end, rec.region_size
         );
-        println!("  operation   {} with 0x{:02x}", rec.operation.label(), rec.key);
+        println!(
+            "  operation   {} with 0x{:02x}",
+            rec.operation.label(),
+            rec.key
+        );
         println!(
             "  entropy     {:.3} → {:.3}  (drop {:+.3})",
             rec.original_entropy, rec.decrypted_entropy, -rec.entropy_drop
@@ -1129,7 +1148,12 @@ fn print_poly_features(p: &PolyFeatures) {
         if !rec.preview_hex.is_empty() {
             // Show as classic xxd-style: 16 bytes per line, max 4 lines.
             let bytes_per_row = 32; // 32 hex chars = 16 bytes
-            for (i, chunk) in rec.preview_hex.as_bytes().chunks(bytes_per_row).enumerate().take(4)
+            for (i, chunk) in rec
+                .preview_hex
+                .as_bytes()
+                .chunks(bytes_per_row)
+                .enumerate()
+                .take(4)
             {
                 let line: String = chunk.iter().map(|&b| b as char).collect();
                 let spaced = line
@@ -1200,7 +1224,10 @@ fn print_ai_features(a: &AiFeatures) {
     let s = &a.stylometry;
     println!("\n  stylometry");
     println!("    opcode diversity     {:.3} bits", s.opcode_diversity);
-    println!("    mean block size      {:.2} instructions", s.mean_block_size);
+    println!(
+        "    mean block size      {:.2} instructions",
+        s.mean_block_size
+    );
     println!("    mean string length   {:.1} chars", s.mean_string_length);
     println!("    underscore density   {:.3}", s.underscore_density);
     println!("    long strings (>30)   {}", s.long_string_count);
@@ -1220,10 +1247,7 @@ fn print_meta_features(m: &MetaFeatures, store: &Store, this_id: &SampleId) -> R
         return Ok(());
     }
     println!("  fingerprint   {}", m.cfg_fingerprint);
-    println!(
-        "  blocks        {}  edges {}",
-        m.block_count, m.edge_count
-    );
+    println!("  blocks        {}  edges {}", m.block_count, m.edge_count);
     println!(
         "  instructions  {} → {} (after canonicalization)",
         m.instruction_count, m.normalized_instruction_count
@@ -1247,7 +1271,11 @@ fn print_meta_features(m: &MetaFeatures, store: &Store, this_id: &SampleId) -> R
     if members.is_empty() {
         println!("  cluster       singleton");
     } else {
-        println!("  cluster       {} other member{}", members.len(), if members.len() == 1 { "" } else { "s" });
+        println!(
+            "  cluster       {} other member{}",
+            members.len(),
+            if members.len() == 1 { "" } else { "s" }
+        );
         for (id, name) in members.iter().take(8) {
             println!("    {}  {}", id.short(), name.as_deref().unwrap_or("-"));
         }

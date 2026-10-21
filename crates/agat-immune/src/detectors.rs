@@ -51,7 +51,14 @@ pub struct Detector {
 
 impl Detector {
     pub fn new(center: Vec<f64>, radius: f64, origin: DetectorOrigin) -> Self {
-        Self { center, radius, generation: 0, family: None, origin, age: 0 }
+        Self {
+            center,
+            radius,
+            generation: 0,
+            family: None,
+            origin,
+            age: 0,
+        }
     }
 
     /// Distance from this detector's center to a signature.
@@ -69,7 +76,11 @@ impl Detector {
     /// to drive clonal selection (clone ∝ affinity, mutate ∝ 1/affinity).
     pub fn affinity(&self, sig: &[f64]) -> f64 {
         if self.radius <= 0.0 {
-            return if self.distance(sig) == 0.0 { 1.0 } else { f64::NEG_INFINITY };
+            return if self.distance(sig) == 0.0 {
+                1.0
+            } else {
+                f64::NEG_INFINITY
+            };
         }
         1.0 - self.distance(sig) / self.radius
     }
@@ -84,7 +95,10 @@ pub struct Repertoire {
 
 impl Repertoire {
     pub fn new(dim: usize) -> Self {
-        Self { dim, detectors: Vec::new() }
+        Self {
+            dim,
+            detectors: Vec::new(),
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -125,7 +139,11 @@ mod tests {
     #[test]
     fn repertoire_coverage() {
         let mut r = Repertoire::new(2);
-        r.detectors.push(Detector::new(vec![1.0, 1.0], 0.5, DetectorOrigin::NegativeSelection));
+        r.detectors.push(Detector::new(
+            vec![1.0, 1.0],
+            0.5,
+            DetectorOrigin::NegativeSelection,
+        ));
         assert!(r.covers(&[1.1, 1.0]));
         assert!(!r.covers(&[0.0, 0.0]));
     }

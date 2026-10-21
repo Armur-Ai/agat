@@ -115,10 +115,9 @@ fn detect_entropy_boundary(curve: &EntropyCurve) -> Option<Signal> {
     }
     // Compare the first quarter (assumed-stub region) to the rest.
     let split = (n / 4).max(1);
-    let before: f64 =
-        curve.points[..split].iter().map(|p| p.entropy).sum::<f64>() / split as f64;
-    let after: f64 = curve.points[split..].iter().map(|p| p.entropy).sum::<f64>()
-        / (n - split) as f64;
+    let before: f64 = curve.points[..split].iter().map(|p| p.entropy).sum::<f64>() / split as f64;
+    let after: f64 =
+        curve.points[split..].iter().map(|p| p.entropy).sum::<f64>() / (n - split) as f64;
     // Stub is meaningfully calmer than the body, and the body is itself high-entropy.
     if after - before > 2.0 && after > 6.0 {
         Some(Signal::EntropyBoundary {
@@ -160,14 +159,10 @@ fn detect_decryptor_loop(lines: &[DisasmLine]) -> Option<Signal> {
             continue;
         }
         // Is this inside (or directly before) a backward-jumping loop?
-        let has_loop = lines
-            .iter()
-            .skip(idx)
-            .take(40)
-            .any(|n| {
-                matches!(n.flow, FlowKind::Branch | FlowKind::Jump)
-                    && n.branch_target.is_some_and(|t| t <= l.address)
-            });
+        let has_loop = lines.iter().skip(idx).take(40).any(|n| {
+            matches!(n.flow, FlowKind::Branch | FlowKind::Jump)
+                && n.branch_target.is_some_and(|t| t <= l.address)
+        });
         if !has_loop {
             continue;
         }
@@ -187,7 +182,15 @@ mod tests {
     use super::*;
     use agat_disasm::FlowKind;
 
-    fn line(addr: u64, mnem: &str, ops: &str, flow: FlowKind, target: Option<u64>, imm: Option<u64>, wm: bool) -> DisasmLine {
+    fn line(
+        addr: u64,
+        mnem: &str,
+        ops: &str,
+        flow: FlowKind,
+        target: Option<u64>,
+        imm: Option<u64>,
+        wm: bool,
+    ) -> DisasmLine {
         DisasmLine {
             address: addr,
             bytes_hex: String::new(),
@@ -203,12 +206,44 @@ mod tests {
     #[test]
     fn detects_xor_loop_with_immediate_key() {
         let lines = vec![
-            line(0x00, "mov", "ecx,100h", FlowKind::Next, None, Some(0x100), false),
-            line(0x05, "mov", "esi,offset payload", FlowKind::Next, None, None, false),
-            line(0x0A, "xor", "byte ptr [esi],42h", FlowKind::Next, None, Some(0x42), true),
+            line(
+                0x00,
+                "mov",
+                "ecx,100h",
+                FlowKind::Next,
+                None,
+                Some(0x100),
+                false,
+            ),
+            line(
+                0x05,
+                "mov",
+                "esi,offset payload",
+                FlowKind::Next,
+                None,
+                None,
+                false,
+            ),
+            line(
+                0x0A,
+                "xor",
+                "byte ptr [esi],42h",
+                FlowKind::Next,
+                None,
+                Some(0x42),
+                true,
+            ),
             line(0x0E, "inc", "esi", FlowKind::Next, None, None, false),
             line(0x10, "dec", "ecx", FlowKind::Next, None, None, false),
-            line(0x12, "jne", "0Ah", FlowKind::Branch, Some(0x0A), None, false),
+            line(
+                0x12,
+                "jne",
+                "0Ah",
+                FlowKind::Branch,
+                Some(0x0A),
+                None,
+                false,
+            ),
             line(0x14, "ret", "", FlowKind::Return, None, None, false),
         ];
         let s = detect_decryptor_loop(&lines).expect("should detect xor loop");
@@ -225,7 +260,15 @@ mod tests {
     fn rejects_non_loop_xor() {
         // xor without a backward jump — not a decryptor.
         let lines = vec![
-            line(0x00, "xor", "byte ptr [esi],42h", FlowKind::Next, None, Some(0x42), true),
+            line(
+                0x00,
+                "xor",
+                "byte ptr [esi],42h",
+                FlowKind::Next,
+                None,
+                Some(0x42),
+                true,
+            ),
             line(0x04, "ret", "", FlowKind::Return, None, None, false),
         ];
         assert!(detect_decryptor_loop(&lines).is_none());
@@ -234,7 +277,15 @@ mod tests {
     #[test]
     fn detects_sub_loop() {
         let lines = vec![
-            line(0x00, "sub", "byte ptr [esi],5", FlowKind::Next, None, Some(0x05), true),
+            line(
+                0x00,
+                "sub",
+                "byte ptr [esi],5",
+                FlowKind::Next,
+                None,
+                Some(0x05),
+                true,
+            ),
             line(0x04, "jne", "0", FlowKind::Branch, Some(0x00), None, false),
         ];
         let s = detect_decryptor_loop(&lines).expect("should detect sub loop");

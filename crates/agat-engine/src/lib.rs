@@ -23,18 +23,16 @@ pub mod sarif;
 use std::collections::{HashMap, HashSet};
 
 use agat_ai::{AiAnalyzer, AiFeatures};
-use agat_disasm::DisasmAnalyzer;
-use agat_meta::MetaAnalyzer;
 use agat_antigen::{Antigen, AntigenConfig};
 use agat_core::{
-    AnalysisContext, Analyzer, AntigenSummary, DangerSummary, RecognitionSummary, Sample,
-    SampleId, SampleKind, SampleMetadata, SampleRef, ScanResult, Severity, SignalSummary,
-    Verdict, SCAN_SCHEMA_VERSION,
+    AnalysisContext, Analyzer, AntigenSummary, DangerSummary, RecognitionSummary, Sample, SampleId,
+    SampleKind, SampleMetadata, SampleRef, ScanResult, Severity, SignalSummary, Verdict,
+    SCAN_SCHEMA_VERSION,
 };
+use agat_disasm::DisasmAnalyzer;
 use agat_immune::danger::{assess, signals_from_features, DangerAssessment, SignalClass};
-use agat_immune::{
-    DangerConfig, DangerContext, MemoryPool, Recognition, Repertoire, SelfModel,
-};
+use agat_immune::{DangerConfig, DangerContext, MemoryPool, Recognition, Repertoire, SelfModel};
+use agat_meta::MetaAnalyzer;
 use agat_poly::{PolyAnalyzer, PolyFeatures};
 use agat_static::{StaticAnalyzer, StaticFeatures};
 use agat_store::Store;
@@ -120,7 +118,9 @@ pub fn analyze_bytes(
 /// Load the persisted self-model, if one has been built.
 pub fn load_self_model(store: &Store) -> Result<Option<SelfModel>> {
     match store.get_self_model(SLOT)? {
-        Some(j) => Ok(Some(serde_json::from_str(&j).context("decoding self-model")?)),
+        Some(j) => Ok(Some(
+            serde_json::from_str(&j).context("decoding self-model")?,
+        )),
         None => Ok(None),
     }
 }
@@ -128,7 +128,9 @@ pub fn load_self_model(store: &Store) -> Result<Option<SelfModel>> {
 /// Load the persisted detector repertoire, if one has been generated.
 pub fn load_repertoire(store: &Store) -> Result<Option<Repertoire>> {
     match store.get_repertoire(SLOT)? {
-        Some(j) => Ok(Some(serde_json::from_str(&j).context("decoding repertoire")?)),
+        Some(j) => Ok(Some(
+            serde_json::from_str(&j).context("decoding repertoire")?,
+        )),
         None => Ok(None),
     }
 }
@@ -171,9 +173,17 @@ impl ScanPolicy {
     /// when the sample is listed.
     pub fn apply(&self, result: &mut ScanResult) {
         let (severity, summary, list) = if self.deny_sha256.contains(&result.sample.id) {
-            (Severity::Malicious, "denylisted by policy — sha256 match", "denylist")
+            (
+                Severity::Malicious,
+                "denylisted by policy — sha256 match",
+                "denylist",
+            )
         } else if self.allow_sha256.contains(&result.sample.id) {
-            (Severity::Clean, "allowlisted by policy — sha256 match", "allowlist")
+            (
+                Severity::Clean,
+                "allowlisted by policy — sha256 match",
+                "allowlist",
+            )
         } else {
             return;
         };
@@ -219,7 +229,10 @@ impl ImmuneModel {
         detectors.extend(memory.detectors());
         Self {
             antigen_cfg: antigen_config(),
-            combined: Repertoire { dim: repertoire.dim, detectors },
+            combined: Repertoire {
+                dim: repertoire.dim,
+                detectors,
+            },
             self_model,
             known_families: memory.families().len(),
             policy: ScanPolicy::default(),
@@ -251,7 +264,8 @@ impl ImmuneModel {
             return Err(ScanError::NoFeatures(id.short()).into());
         }
         let antigen = Antigen::from_feature_map(map, &self.antigen_cfg);
-        let recognition = agat_immune::recognize(&antigen, &self.combined, self.self_model.as_ref());
+        let recognition =
+            agat_immune::recognize(&antigen, &self.combined, self.self_model.as_ref());
 
         // Danger layer over the same sample's real harm signals.
         let static_features: Option<StaticFeatures> = typed(map, "static");
@@ -265,7 +279,14 @@ impl ImmuneModel {
         );
         let danger = assess(&signals, &self.policy.danger);
 
-        let mut result = assemble(id, name, &antigen, &recognition, &danger, self.known_families);
+        let mut result = assemble(
+            id,
+            name,
+            &antigen,
+            &recognition,
+            &danger,
+            self.known_families,
+        );
         self.policy.apply(&mut result);
         Ok(result)
     }
@@ -324,7 +345,11 @@ pub fn assemble(
             value: c.value,
         })
         .collect();
-    signals.sort_by(|a, b| b.value.partial_cmp(&a.value).unwrap_or(std::cmp::Ordering::Equal));
+    signals.sort_by(|a, b| {
+        b.value
+            .partial_cmp(&a.value)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     let verdict = ScanResult::fuse(
         rec.recognized,
@@ -397,9 +422,21 @@ mod tests {
                 danger: 0.5,
                 safe: 0.1,
                 contributors: vec![
-                    SignalContribution { name: "mild".into(), class: SignalClass::Safe, value: 0.2 },
-                    SignalContribution { name: "loud".into(), class: SignalClass::Pamp, value: 0.9 },
-                    SignalContribution { name: "mid".into(), class: SignalClass::Danger, value: 0.5 },
+                    SignalContribution {
+                        name: "mild".into(),
+                        class: SignalClass::Safe,
+                        value: 0.2,
+                    },
+                    SignalContribution {
+                        name: "loud".into(),
+                        class: SignalClass::Pamp,
+                        value: 0.9,
+                    },
+                    SignalContribution {
+                        name: "mid".into(),
+                        class: SignalClass::Danger,
+                        value: 0.5,
+                    },
                 ],
             },
             csm: 0.0,
@@ -431,7 +468,14 @@ mod tests {
     fn maps_fields_sorts_signals_and_roundtrips_json() {
         let id = SampleId([3u8; 32]);
         let danger = danger(0.81, DangerContext::Dangerous);
-        let result = assemble(&id, Some("x.exe".into()), &antigen(), &recognition_nonself_family(), &danger, 4);
+        let result = assemble(
+            &id,
+            Some("x.exe".into()),
+            &antigen(),
+            &recognition_nonself_family(),
+            &danger,
+            4,
+        );
 
         // sample
         assert_eq!(result.sample.short, id.short());
@@ -451,7 +495,11 @@ mod tests {
         // danger: signals sorted strongest-first
         assert_eq!(result.danger.context, "dangerous");
         assert_eq!(result.danger.signals.first().unwrap().name, "loud");
-        assert!(result.danger.signals.windows(2).all(|w| w[0].value >= w[1].value));
+        assert!(result
+            .danger
+            .signals
+            .windows(2)
+            .all(|w| w[0].value >= w[1].value));
         // fused verdict: non-self + dangerous ⇒ malicious
         assert_eq!(result.severity(), agat_core::Severity::Malicious);
         // schema + contract
@@ -479,7 +527,14 @@ mod tests {
     fn policy_lists_override_the_verdict_and_deny_wins() {
         let id = SampleId([7u8; 32]);
         let fresh = || {
-            assemble(&id, None, &antigen(), &recognition_nonself_family(), &danger(0.81, DangerContext::Dangerous), 1)
+            assemble(
+                &id,
+                None,
+                &antigen(),
+                &recognition_nonself_family(),
+                &danger(0.81, DangerContext::Dangerous),
+                1,
+            )
         };
         let mut policy = ScanPolicy::default();
 
@@ -516,7 +571,14 @@ mod tests {
             from_memory: false,
             self_surface_distance: Some(-0.3),
         };
-        let result = assemble(&id, None, &antigen(), &rec, &danger(0.05, DangerContext::Safe), 2);
+        let result = assemble(
+            &id,
+            None,
+            &antigen(),
+            &rec,
+            &danger(0.05, DangerContext::Safe),
+            2,
+        );
         assert_eq!(result.severity(), agat_core::Severity::Clean);
         assert_eq!(result.recognition.affinity, 0.0);
         assert!(result.sample.name.is_none());

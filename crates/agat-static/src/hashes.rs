@@ -109,9 +109,7 @@ mod tests {
         let h = compute_hashes(b"", &parsed);
         // md5("kernel32.loadlibrarya,user32.messageboxa") = c4f...
         let imphash = h.imphash.expect("PE with imports should have imphash");
-        let expected = hex::encode(Md5::digest(
-            b"kernel32.loadlibrarya,user32.messageboxa",
-        ));
+        let expected = hex::encode(Md5::digest(b"kernel32.loadlibrarya,user32.messageboxa"));
         assert_eq!(imphash, expected);
     }
 }

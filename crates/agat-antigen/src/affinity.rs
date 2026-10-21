@@ -40,21 +40,31 @@ impl Default for AffinityConfig {
         // Equal blend. When a sample has no canonical blocks (non-x86,
         // or nothing disassembled) the Jaccard term is undefined and
         // `affinity` falls back to pure cosine — see below.
-        Self { alpha: 0.5, beta: 0.5 }
+        Self {
+            alpha: 0.5,
+            beta: 0.5,
+        }
     }
 }
 
 impl AffinityConfig {
     /// Cosine-only affinity (ignores the block-token set entirely).
     pub fn cosine_only() -> Self {
-        Self { alpha: 1.0, beta: 0.0 }
+        Self {
+            alpha: 1.0,
+            beta: 0.0,
+        }
     }
 }
 
 /// Cosine similarity of two equal-length non-negative vectors, in
 /// `[0, 1]`. Returns 0.0 if either vector has zero magnitude.
 pub fn cosine_similarity(a: &[f64], b: &[f64]) -> f64 {
-    debug_assert_eq!(a.len(), b.len(), "antigen signatures must be the same length");
+    debug_assert_eq!(
+        a.len(),
+        b.len(),
+        "antigen signatures must be the same length"
+    );
     let n = a.len().min(b.len());
     let mut dot = 0.0;
     let mut na = 0.0;
@@ -74,7 +84,11 @@ pub fn cosine_similarity(a: &[f64], b: &[f64]) -> f64 {
 /// the real-valued negative-selection / V-detector geometry, where
 /// detectors are points with radii in signature space.
 pub fn euclidean_distance(a: &[f64], b: &[f64]) -> f64 {
-    debug_assert_eq!(a.len(), b.len(), "antigen signatures must be the same length");
+    debug_assert_eq!(
+        a.len(),
+        b.len(),
+        "antigen signatures must be the same length"
+    );
     let n = a.len().min(b.len());
     let mut acc = 0.0;
     for i in 0..n {

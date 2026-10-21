@@ -128,8 +128,8 @@ fn derive_key(password: &str, salt: &[u8]) -> Result<[u8; 32]> {
 }
 
 fn encrypt_check(key: &[u8; 32]) -> Result<Vec<u8>> {
-    let cipher = Aes256Gcm::new_from_slice(key)
-        .map_err(|e| Error::Crypto(format!("cipher init: {e}")))?;
+    let cipher =
+        Aes256Gcm::new_from_slice(key).map_err(|e| Error::Crypto(format!("cipher init: {e}")))?;
     let mut nonce_bytes = [0u8; NONCE_LEN];
     rand::thread_rng().fill_bytes(&mut nonce_bytes);
     let nonce = Nonce::from_slice(&nonce_bytes);
@@ -148,8 +148,8 @@ fn verify_check(key: &[u8; 32], check: &[u8]) -> Result<()> {
     }
     let (nonce_bytes, ct) = check.split_at(NONCE_LEN);
     let nonce = Nonce::from_slice(nonce_bytes);
-    let cipher = Aes256Gcm::new_from_slice(key)
-        .map_err(|e| Error::Crypto(format!("cipher init: {e}")))?;
+    let cipher =
+        Aes256Gcm::new_from_slice(key).map_err(|e| Error::Crypto(format!("cipher init: {e}")))?;
     let pt = cipher
         .decrypt(nonce, ct)
         .map_err(|_| Error::Crypto("vault password is wrong".into()))?;

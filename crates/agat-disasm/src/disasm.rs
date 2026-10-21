@@ -1,6 +1,8 @@
 //! Linear-sweep and recursive-descent disassembly on top of iced-x86.
 
-use iced_x86::{Decoder, DecoderOptions, FlowControl, Formatter, Instruction, IntelFormatter, OpKind};
+use iced_x86::{
+    Decoder, DecoderOptions, FlowControl, Formatter, Instruction, IntelFormatter, OpKind,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet, VecDeque};
 
@@ -171,9 +173,7 @@ fn make_line(
     let (mnemonic, operands) = split_mnemonic(&formatted);
     let flow: FlowKind = instr.flow_control().into();
     let branch_target = match instr.flow_control() {
-        FlowControl::ConditionalBranch
-        | FlowControl::UnconditionalBranch
-        | FlowControl::Call => {
+        FlowControl::ConditionalBranch | FlowControl::UnconditionalBranch | FlowControl::Call => {
             let t = instr.near_branch_target();
             if t == 0 {
                 None
@@ -255,11 +255,15 @@ mod tests {
         // Actually let me reconstruct: simpler with `je +2; ret; ret`
         let bytes = [
             0x74, 0x01, // je  +1   target = 0x1003
-            0xC3,       // ret  (fallthrough at 0x1002)
-            0xC3,       // ret  (branch target at 0x1003)
+            0xC3, // ret  (fallthrough at 0x1002)
+            0xC3, // ret  (branch target at 0x1003)
         ];
         let lines = recursive_descent(&bytes, 0x1000, 64, &[0x1000], 16);
-        assert!(lines.len() >= 3, "expected ≥3 instructions, got {}", lines.len());
+        assert!(
+            lines.len() >= 3,
+            "expected ≥3 instructions, got {}",
+            lines.len()
+        );
         // First instruction is the conditional branch
         let je = &lines[0];
         assert_eq!(je.flow, FlowKind::Branch);

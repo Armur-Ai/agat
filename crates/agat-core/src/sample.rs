@@ -91,12 +91,8 @@ impl SampleKind {
             };
         }
         if bytes.starts_with(b"MZ") && bytes.len() >= 0x40 {
-            let pe_off = u32::from_le_bytes([
-                bytes[0x3C],
-                bytes[0x3D],
-                bytes[0x3E],
-                bytes[0x3F],
-            ]) as usize;
+            let pe_off =
+                u32::from_le_bytes([bytes[0x3C], bytes[0x3D], bytes[0x3E], bytes[0x3F]]) as usize;
             if bytes.len() >= pe_off + 6 && &bytes[pe_off..pe_off + 4] == b"PE\0\0" {
                 let machine = u16::from_le_bytes([bytes[pe_off + 4], bytes[pe_off + 5]]);
                 return match machine {

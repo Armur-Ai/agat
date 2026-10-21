@@ -152,16 +152,21 @@ impl Antigen {
         map: &HashMap<String, serde_json::Value>,
         cfg: &AntigenConfig,
     ) -> Antigen {
-        let static_features: Option<StaticFeatures> =
-            map.get("static").and_then(|v| serde_json::from_value(v.clone()).ok());
-        let disasm: Option<DisasmFeatures> =
-            map.get("disasm").and_then(|v| serde_json::from_value(v.clone()).ok());
-        let poly: Option<PolyFeatures> =
-            map.get("poly").and_then(|v| serde_json::from_value(v.clone()).ok());
-        let meta: Option<MetaFeatures> =
-            map.get("meta").and_then(|v| serde_json::from_value(v.clone()).ok());
-        let ai: Option<AiFeatures> =
-            map.get("ai").and_then(|v| serde_json::from_value(v.clone()).ok());
+        let static_features: Option<StaticFeatures> = map
+            .get("static")
+            .and_then(|v| serde_json::from_value(v.clone()).ok());
+        let disasm: Option<DisasmFeatures> = map
+            .get("disasm")
+            .and_then(|v| serde_json::from_value(v.clone()).ok());
+        let poly: Option<PolyFeatures> = map
+            .get("poly")
+            .and_then(|v| serde_json::from_value(v.clone()).ok());
+        let meta: Option<MetaFeatures> = map
+            .get("meta")
+            .and_then(|v| serde_json::from_value(v.clone()).ok());
+        let ai: Option<AiFeatures> = map
+            .get("ai")
+            .and_then(|v| serde_json::from_value(v.clone()).ok());
 
         let input = AntigenInput {
             static_features: static_features.as_ref(),

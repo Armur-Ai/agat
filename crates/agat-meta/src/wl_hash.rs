@@ -39,12 +39,7 @@ pub fn wl_hash(blocks: &[Vec<CanonicalInstruction>], edges: &[(usize, usize)]) -
             let mut p: Vec<&str> = pred[i].iter().map(|&n| labels[n].as_str()).collect();
             s.sort();
             p.sort();
-            let combined = format!(
-                "{}|s:[{}]|p:[{}]",
-                labels[i],
-                s.join(","),
-                p.join(",")
-            );
+            let combined = format!("{}|s:[{}]|p:[{}]", labels[i], s.join(","), p.join(","));
             next.push(sha8(&combined));
         }
         labels = next;

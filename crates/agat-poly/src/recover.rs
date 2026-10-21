@@ -57,11 +57,11 @@ pub fn try_recover(
     let entropy_drop = original_entropy - decrypted_entropy;
 
     let strings = extract_ascii(&decrypted, 4);
-    let recovered_strings: Vec<String> =
-        strings.iter().take(8).map(|s| s.value.clone()).collect();
+    let recovered_strings: Vec<String> = strings.iter().take(8).map(|s| s.value.clone()).collect();
     let preview_hex = hex::encode(&decrypted[..decrypted.len().min(128)]);
     let recovery_score = score_recovery(entropy_drop, &recovered_strings);
-    let plaintext_fingerprint = fingerprint_plaintext(&strings.iter().map(|s| s.value.clone()).collect::<Vec<_>>());
+    let plaintext_fingerprint =
+        fingerprint_plaintext(&strings.iter().map(|s| s.value.clone()).collect::<Vec<_>>());
 
     Some(RecoveredPayload {
         region_start,

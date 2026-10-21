@@ -58,12 +58,12 @@ impl Analyzer for MetaAnalyzer {
             canonical_blocks.push(canonicalize_block_with(lines, &mut renamer));
         }
 
-        let block_fingerprints: Vec<String> = canonical_blocks.iter().map(|b| hash_block(b)).collect();
+        let block_fingerprints: Vec<String> =
+            canonical_blocks.iter().map(|b| hash_block(b)).collect();
         let edges: Vec<(usize, usize)> = df.edges.iter().map(|e| (e.from, e.to)).collect();
         let cfg_fingerprint = wl_hash(&canonical_blocks, &edges);
 
-        let normalized_instruction_count: usize =
-            canonical_blocks.iter().map(|b| b.len()).sum();
+        let normalized_instruction_count: usize = canonical_blocks.iter().map(|b| b.len()).sum();
         let canonical_preview = canonical_blocks
             .iter()
             .flatten()
@@ -108,13 +108,9 @@ fn empty_bundle() -> FeatureBundle {
     }
 }
 
-fn pull_features<T: serde::de::DeserializeOwned>(
-    ctx: &AnalysisContext,
-    name: &str,
-) -> Result<T> {
-    let value = ctx
-        .previous_features
-        .get(name)
-        .ok_or_else(|| Error::Other(format!("meta: required upstream features '{name}' missing")))?;
+fn pull_features<T: serde::de::DeserializeOwned>(ctx: &AnalysisContext, name: &str) -> Result<T> {
+    let value = ctx.previous_features.get(name).ok_or_else(|| {
+        Error::Other(format!("meta: required upstream features '{name}' missing"))
+    })?;
     serde_json::from_value(value.clone()).map_err(Error::from)
 }

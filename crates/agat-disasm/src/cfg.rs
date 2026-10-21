@@ -116,10 +116,19 @@ pub fn build_cfg(lines: &[DisasmLine]) -> (Vec<BasicBlock>, Vec<Edge>) {
         }
         let last = &sorted[block_end_idx - 1];
         let (terminator, fallthrough_addr) = match last.flow {
-            FlowKind::Next => (BlockTerminator::Fallthrough, sorted.get(block_end_idx).map(|n| n.address)),
-            FlowKind::Branch => (BlockTerminator::Branch, sorted.get(block_end_idx).map(|n| n.address)),
+            FlowKind::Next => (
+                BlockTerminator::Fallthrough,
+                sorted.get(block_end_idx).map(|n| n.address),
+            ),
+            FlowKind::Branch => (
+                BlockTerminator::Branch,
+                sorted.get(block_end_idx).map(|n| n.address),
+            ),
             FlowKind::Jump => (BlockTerminator::Jump, None),
-            FlowKind::Call => (BlockTerminator::Call, sorted.get(block_end_idx).map(|n| n.address)),
+            FlowKind::Call => (
+                BlockTerminator::Call,
+                sorted.get(block_end_idx).map(|n| n.address),
+            ),
             FlowKind::Return => (BlockTerminator::Return, None),
             FlowKind::Indirect => (BlockTerminator::Indirect, None),
             FlowKind::Invalid => (BlockTerminator::Invalid, None),
