@@ -126,6 +126,16 @@ impl Tab {
             Tab::Ai => 5,
         }
     }
+    fn cycle_back(self) -> Tab {
+        match self {
+            Tab::Immune => Tab::Ai,
+            Tab::Overview => Tab::Immune,
+            Tab::Disasm => Tab::Overview,
+            Tab::Poly => Tab::Disasm,
+            Tab::Meta => Tab::Poly,
+            Tab::Ai => Tab::Meta,
+        }
+    }
     fn cycle(self) -> Tab {
         match self {
             Tab::Immune => Tab::Overview,
@@ -149,6 +159,12 @@ struct App {
     has_model: bool,
     list_state: ListState,
     active_tab: Tab,
+    /// Vertical scroll offset of the content pane.
+    content_scroll: u16,
+    /// Help overlay visible.
+    show_help: bool,
+    /// Live filter over the sample list; `None` unless search is active.
+    filter: Option<String>,
 }
 
 impl App {
@@ -174,41 +190,80 @@ impl App {
             has_model,
             list_state,
             active_tab: Tab::Immune,
+            content_scroll: 0,
+            show_help: false,
+            filter: None,
+        }
+    }
+
+    /// Indices into `samples` that match the active filter (all of them
+    /// when no filter is set), newest-first order preserved.
+    fn visible(&self) -> Vec<usize> {
+        match &self.filter {
+            None => (0..self.samples.len()).collect(),
+            Some(q) => {
+                let q = q.to_ascii_lowercase();
+                (0..self.samples.len())
+                    .filter(|&i| {
+                        let s = &self.samples[i];
+                        s.sample.id.to_hex().contains(&q)
+                            || s.sample
+                                .metadata
+                                .original_filename
+                                .as_deref()
+                                .map(|n| n.to_ascii_lowercase().contains(&q))
+                                .unwrap_or(false)
+                    })
+                    .collect()
+            }
         }
     }
 
     fn next(&mut self) {
-        if self.samples.is_empty() {
+        let n = self.visible().len();
+        if n == 0 {
             return;
         }
-        let i = self
-            .list_state
-            .selected()
-            .map(|i| (i + 1) % self.samples.len())
-            .unwrap_or(0);
+        let i = self.list_state.selected().map(|i| (i + 1) % n).unwrap_or(0);
         self.list_state.select(Some(i));
+        self.content_scroll = 0;
     }
 
     fn prev(&mut self) {
-        if self.samples.is_empty() {
+        let n = self.visible().len();
+        if n == 0 {
             return;
         }
         let i = self
             .list_state
             .selected()
-            .map(|i| {
-                if i == 0 {
-                    self.samples.len() - 1
-                } else {
-                    i - 1
-                }
-            })
+            .map(|i| if i == 0 { n - 1 } else { i - 1 })
             .unwrap_or(0);
         self.list_state.select(Some(i));
+        self.content_scroll = 0;
     }
 
+    /// The selected sample, mapped through the active filter.
     fn selected(&self) -> Option<&StoredSample> {
-        self.list_state.selected().and_then(|i| self.samples.get(i))
+        let visible = self.visible();
+        let pos = self.list_state.selected()?;
+        visible.get(pos).map(|&i| &self.samples[i])
+    }
+
+    fn set_tab(&mut self, tab: Tab) {
+        self.active_tab = tab;
+        self.content_scroll = 0;
+    }
+
+    /// Clamp the list selection into the visible range (after filtering).
+    fn clamp_selection(&mut self) {
+        let n = self.visible().len();
+        if n == 0 {
+            self.list_state.select(None);
+        } else {
+            let i = self.list_state.selected().unwrap_or(0).min(n - 1);
+            self.list_state.select(Some(i));
+        }
     }
 
     fn selected_verdict(&self) -> Option<&ScanResult> {
@@ -272,20 +327,65 @@ fn run_loop<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: &mut 
                 if key.kind != KeyEventKind::Press {
                     continue;
                 }
+                if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+                    return Ok(());
+                }
+                // Search mode captures typing.
+                if let Some(q) = app.filter.as_mut() {
+                    match key.code {
+                        KeyCode::Esc => {
+                            app.filter = None;
+                            app.clamp_selection();
+                        }
+                        KeyCode::Enter => {
+                            if q.is_empty() {
+                                app.filter = None;
+                            }
+                            app.clamp_selection();
+                        }
+                        KeyCode::Backspace => {
+                            q.pop();
+                            app.clamp_selection();
+                        }
+                        KeyCode::Char(c) => {
+                            q.push(c);
+                            app.clamp_selection();
+                        }
+                        _ => {}
+                    }
+                    continue;
+                }
+                if app.show_help {
+                    // Any key dismisses help.
+                    app.show_help = false;
+                    continue;
+                }
                 match key.code {
                     KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
-                    KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        return Ok(())
-                    }
                     KeyCode::Down | KeyCode::Char('j') => app.next(),
                     KeyCode::Up | KeyCode::Char('k') => app.prev(),
-                    KeyCode::Char('1') => app.active_tab = Tab::Immune,
-                    KeyCode::Char('2') => app.active_tab = Tab::Overview,
-                    KeyCode::Char('3') => app.active_tab = Tab::Disasm,
-                    KeyCode::Char('4') => app.active_tab = Tab::Poly,
-                    KeyCode::Char('5') => app.active_tab = Tab::Meta,
-                    KeyCode::Char('6') => app.active_tab = Tab::Ai,
-                    KeyCode::Tab => app.active_tab = app.active_tab.cycle(),
+                    KeyCode::Char('/') => {
+                        app.filter = Some(String::new());
+                        app.list_state.select(Some(0));
+                    }
+                    KeyCode::Char('?') => app.show_help = true,
+                    KeyCode::PageDown | KeyCode::Char(' ') => {
+                        app.content_scroll = app.content_scroll.saturating_add(10)
+                    }
+                    KeyCode::PageUp => app.content_scroll = app.content_scroll.saturating_sub(10),
+                    KeyCode::Char('J') => app.content_scroll = app.content_scroll.saturating_add(1),
+                    KeyCode::Char('K') => app.content_scroll = app.content_scroll.saturating_sub(1),
+                    KeyCode::Char('g') => app.content_scroll = 0,
+                    KeyCode::Char('1') => app.set_tab(Tab::Immune),
+                    KeyCode::Char('2') => app.set_tab(Tab::Overview),
+                    KeyCode::Char('3') => app.set_tab(Tab::Disasm),
+                    KeyCode::Char('4') => app.set_tab(Tab::Poly),
+                    KeyCode::Char('5') => app.set_tab(Tab::Meta),
+                    KeyCode::Char('6') => app.set_tab(Tab::Ai),
+                    KeyCode::Tab => app.set_tab(app.active_tab.cycle()),
+                    KeyCode::BackTab => app.set_tab(app.active_tab.cycle_back()),
+                    KeyCode::Right | KeyCode::Char('l') => app.set_tab(app.active_tab.cycle()),
+                    KeyCode::Left | KeyCode::Char('h') => app.set_tab(app.active_tab.cycle_back()),
                     _ => {}
                 }
             }
@@ -364,15 +464,22 @@ fn draw(f: &mut Frame, app: &App) {
         .constraints([Constraint::Length(40), Constraint::Min(0)])
         .split(chunks[1]);
 
-    // Sample list (left)
+    // Sample list (left), filtered by the active search.
+    let visible = app.visible();
     let items: Vec<ListItem> = if app.samples.is_empty() {
         vec![ListItem::new(Span::styled(
             "(no samples ingested yet)",
             Style::default().fg(Color::DarkGray),
         ))]
+    } else if visible.is_empty() {
+        vec![ListItem::new(Span::styled(
+            "(no samples match)",
+            Style::default().fg(Color::DarkGray),
+        ))]
     } else {
-        app.samples
+        visible
             .iter()
+            .map(|&i| &app.samples[i])
             .map(|s| {
                 let (marker, marker_color) = match app.verdicts.get(&s.sample.id) {
                     Some(r) => ("●", severity_color(r.severity())),
@@ -404,10 +511,28 @@ fn draw(f: &mut Frame, app: &App) {
             })
             .collect()
     };
+    let list_title = match &app.filter {
+        Some(q) => format!(" search: {q}▏ "),
+        None => format!(" samples ({}) ", app.samples.len()),
+    };
+    let list_border = if app.filter.is_some() {
+        Color::Cyan
+    } else {
+        Color::Reset
+    };
     let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title(" samples "))
-        .highlight_style(Style::default().add_modifier(Modifier::REVERSED))
-        .highlight_symbol("> ");
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(list_border))
+                .title(list_title),
+        )
+        .highlight_style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD | Modifier::REVERSED),
+        )
+        .highlight_symbol("▶ ");
     let mut state = app.list_state.clone();
     f.render_stateful_widget(list, body[0], &mut state);
 
@@ -444,24 +569,121 @@ fn draw(f: &mut Frame, app: &App) {
         Tab::Meta => build_meta(app),
         Tab::Ai => build_ai(app),
     };
-    let content_block = Block::default().borders(Borders::ALL);
+    let total_lines = content_lines.len() as u16;
+    let view_h = right_chunks[1].height.saturating_sub(2);
+    let max_scroll = total_lines.saturating_sub(view_h);
+    let scroll = app.content_scroll.min(max_scroll);
+    let scroll_hint = if max_scroll > 0 {
+        format!(
+            " {}–{}/{} ",
+            scroll + 1,
+            (scroll + view_h).min(total_lines),
+            total_lines
+        )
+    } else {
+        String::new()
+    };
+    let content_block = Block::default().borders(Borders::ALL).title(
+        Line::from(Span::styled(
+            scroll_hint,
+            Style::default().fg(Color::DarkGray),
+        ))
+        .right_aligned(),
+    );
     let content = Paragraph::new(content_lines)
         .block(content_block)
+        .scroll((scroll, 0))
         .wrap(Wrap { trim: false });
     f.render_widget(content, right_chunks[1]);
 
-    let footer = Paragraph::new(Line::from(vec![
-        Span::styled(" j/k ", Style::default().fg(Color::Black).bg(Color::Gray)),
-        Span::raw(" navigate    "),
+    let key = |k: &str| {
         Span::styled(
-            " 1-6/Tab ",
+            format!(" {k} "),
             Style::default().fg(Color::Black).bg(Color::Gray),
-        ),
-        Span::raw(" switch tab    "),
-        Span::styled(" q ", Style::default().fg(Color::Black).bg(Color::Gray)),
-        Span::raw(" quit "),
-    ]));
-    f.render_widget(footer, chunks[2]);
+        )
+    };
+    let footer_spans = if app.filter.is_some() {
+        vec![
+            key("type"),
+            Span::raw(" filter  "),
+            key("↵"),
+            Span::raw(" apply  "),
+            key("esc"),
+            Span::raw(" cancel "),
+        ]
+    } else {
+        vec![
+            key("j/k"),
+            Span::raw(" sample  "),
+            key("h/l"),
+            Span::raw(" tab  "),
+            key("PgUp/Dn"),
+            Span::raw(" scroll  "),
+            key("/"),
+            Span::raw(" search  "),
+            key("?"),
+            Span::raw(" help  "),
+            key("q"),
+            Span::raw(" quit "),
+        ]
+    };
+    f.render_widget(Paragraph::new(Line::from(footer_spans)), chunks[2]);
+
+    if app.show_help {
+        draw_help(f);
+    }
+}
+
+/// A centered help overlay listing every key binding.
+fn draw_help(f: &mut Frame) {
+    let area = f.area();
+    let w = 52u16.min(area.width.saturating_sub(4));
+    let h = 18u16.min(area.height.saturating_sub(2));
+    let x = (area.width.saturating_sub(w)) / 2;
+    let y = (area.height.saturating_sub(h)) / 2;
+    let popup = ratatui::layout::Rect {
+        x,
+        y,
+        width: w,
+        height: h,
+    };
+    f.render_widget(ratatui::widgets::Clear, popup);
+    let cyan = Style::default().fg(Color::Cyan);
+    let k = |key: &str, desc: &str| {
+        Line::from(vec![
+            Span::styled(format!("  {key:<12}"), Style::default().fg(Color::Yellow)),
+            Span::raw(desc.to_string()),
+        ])
+    };
+    let lines = vec![
+        Line::from(Span::styled(
+            "  agat — key bindings",
+            cyan.add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+        k("j / k ↑ ↓", "previous / next sample"),
+        k("h / l ← →", "previous / next tab"),
+        k("Tab", "cycle tabs forward"),
+        k("1 … 6", "jump to a tab"),
+        k("PgUp/PgDn", "scroll the view"),
+        k("J / K", "scroll by one line"),
+        k("g", "scroll to top"),
+        k("/", "search samples (id / name)"),
+        k("?", "toggle this help"),
+        k("q / Esc", "quit"),
+        Line::from(""),
+        Line::from(Span::styled(
+            "  press any key to close",
+            Style::default().fg(Color::DarkGray),
+        )),
+    ];
+    let help = Paragraph::new(lines).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(cyan)
+            .title(" help "),
+    );
+    f.render_widget(help, popup);
 }
 
 fn severity_color(sev: Severity) -> Color {
@@ -1392,6 +1614,40 @@ mod tests {
         ] {
             assert!(screen.contains(needle), "missing {needle:?} in:\n{screen}");
         }
+    }
+
+    #[test]
+    fn search_filters_the_sample_list() {
+        let a = sample(1, "unseen_variant.bin");
+        let b = sample(2, "baseline_tool.bin");
+        let c = sample(3, "ai_rewritten.bin");
+        let mut app = app_with(vec![], vec![a, b, c], false);
+        assert_eq!(app.visible().len(), 3);
+        app.filter = Some("baseline".into());
+        let v = app.visible();
+        assert_eq!(v.len(), 1);
+        assert_eq!(
+            app.samples[v[0]]
+                .sample
+                .metadata
+                .original_filename
+                .as_deref(),
+            Some("baseline_tool.bin")
+        );
+        // A non-matching query hides everything; selection clamps to None.
+        app.filter = Some("zzz".into());
+        app.clamp_selection();
+        assert!(app.visible().is_empty());
+        assert_eq!(app.list_state.selected(), None);
+    }
+
+    #[test]
+    fn help_overlay_renders_key_bindings() {
+        let mut app = app_with(vec![], vec![sample(1, "x.bin")], false);
+        app.show_help = true;
+        let screen = render(&app);
+        assert!(screen.contains("key bindings"), "{screen}");
+        assert!(screen.contains("search samples"), "{screen}");
     }
 
     #[test]
