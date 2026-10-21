@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="560" viewBox="0 0 1280 560" role="img" aria-label="agat pipeline: a binary is analyzed into a mutation-invariant antigen, judged on two independent axes (recognition and danger), and fused into one verdict">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#03050b"/>
+      <stop offset="1" stop-color="#0c0a1d"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#5ef2ff"/>
+      <stop offset="1" stop-color="#d07bff"/>
+    </linearGradient>
+    <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1" fill="#5ef2ff" fill-opacity="0.07"/>
+    </pattern>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#5ef2ff" fill-opacity="0.8"/>
+    </marker>
+    <filter id="glow" x="-10%" y="-10%" width="120%" height="120%">
+      <feGaussianBlur stdDeviation="3" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <style>
+      .box   { fill: #0b1226; stroke: #5ef2ff; stroke-opacity: .45; stroke-width: 1.2; }
+      .boxm  { fill: #160b24; stroke: #ff4fd8; stroke-opacity: .6; stroke-width: 1.2; }
+      .boxg  { fill: #071a16; stroke: #2bd99a; stroke-opacity: .6; stroke-width: 1.2; }
+      .boxv  { fill: #120d26; stroke: url(#accent); stroke-width: 1.6; }
+      .h     { font: 700 15px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: 2px; fill: #e8efff; }
+      .t     { font: 12.5px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #93a4cc; }
+      .k     { font: 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: 3px; fill: #5ef2ff; fill-opacity: .8; }
+      .km    { font: 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: 3px; fill: #ff4fd8; fill-opacity: .9; }
+      .kg    { font: 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: 3px; fill: #2bd99a; fill-opacity: .9; }
+      .flow  { stroke: #5ef2ff; stroke-opacity: .55; stroke-width: 1.4; fill: none; marker-end: url(#arrow); }
+      .sev   { font: 700 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: 1px; }
+    </style>
+  </defs>
+
+  <rect width="1280" height="560" fill="url(#bg)"/>
+  <rect width="1280" height="560" fill="url(#dots)"/>
+
+  <!-- 1. input -->
+  <text x="40" y="48" class="k">01 · SAMPLE</text>
+  <rect x="40" y="64" width="170" height="92" rx="10" class="box"/>
+  <text x="58" y="96" class="h">binary</text>
+  <text x="58" y="120" class="t">PE / ELF · x86/x64</text>
+  <text x="58" y="140" class="t">read in memory</text>
+
+  <!-- 2. antigen presentation -->
+  <text x="270" y="48" class="k">02 · ANTIGEN PRESENTATION</text>
+  <rect x="270" y="64" width="314" height="236" rx="10" class="box"/>
+  <text x="290" y="96" class="h">behavioral pipeline</text>
+  <text x="290" y="126" class="t"><tspan fill="#5ef2ff">static</tspan><tspan x="366">entropy · strings · imports</tspan></text>
+  <text x="290" y="150" class="t"><tspan fill="#5ef2ff">disasm</tspan><tspan x="366">recursive descent · CFG</tspan></text>
+  <text x="290" y="174" class="t"><tspan fill="#5ef2ff">poly</tspan><tspan x="366">decryptor → key → payload</tspan></text>
+  <text x="290" y="198" class="t"><tspan fill="#5ef2ff">meta</tspan><tspan x="366">canonical form · WL hash</tspan></text>
+  <text x="290" y="222" class="t"><tspan fill="#5ef2ff">ai</tspan><tspan x="366">artifacts · stylometry</tspan></text>
+  <line x1="290" y1="242" x2="564" y2="242" stroke="#5ef2ff" stroke-opacity=".2"/>
+  <text x="290" y="266" class="t" fill="#e8efff">→ mutation-invariant antigen</text>
+  <text x="290" y="286" class="t">signature vector + block tokens</text>
+
+  <!-- 3. immune core -->
+  <text x="630" y="48" class="k">03 · IMMUNE CORE</text>
+  <rect x="630" y="64" width="300" height="104" rx="10" class="boxg"/>
+  <text x="650" y="94" class="h">recognition</text>
+  <text x="650" y="118" class="t">negative selection: detectors</text>
+  <text x="650" y="136" class="t">tile everything that is not self</text>
+  <text x="650" y="156" class="kg">IS IT NON-SELF?</text>
+
+  <rect x="630" y="184" width="300" height="104" rx="10" class="boxm"/>
+  <text x="650" y="214" class="h">memory</text>
+  <text x="650" y="238" class="t">clonal selection: a covering ball</text>
+  <text x="650" y="256" class="t">over a family's matured variants</text>
+  <text x="650" y="276" class="km">WHOSE FAMILY?</text>
+
+  <rect x="630" y="304" width="300" height="104" rx="10" class="box"/>
+  <text x="650" y="334" class="h">danger</text>
+  <text x="650" y="358" class="t">dendritic-cell fusion of PAMP,</text>
+  <text x="650" y="376" class="t">danger and safe signals</text>
+  <text x="650" y="396" class="k">IS IT HARMFUL?</text>
+
+  <!-- 4. verdict -->
+  <text x="990" y="48" class="k">04 · VERDICT</text>
+  <rect x="990" y="64" width="250" height="236" rx="10" class="boxv" filter="url(#glow)"/>
+  <text x="1010" y="96" class="h">ScanResult</text>
+  <text x="1010" y="120" class="t">two axes, never collapsed</text>
+  <text x="1010" y="152" class="sev" fill="#ff5c7a">MALICIOUS<tspan x="1130" fill="#93a4cc">exit 3</tspan></text>
+  <text x="1010" y="176" class="sev" fill="#ffc857">SUSPICIOUS<tspan x="1130" fill="#93a4cc">exit 2</tspan></text>
+  <text x="1010" y="200" class="sev" fill="#5ef2ff">REVIEW<tspan x="1130" fill="#93a4cc">exit 2</tspan></text>
+  <text x="1010" y="224" class="sev" fill="#2bd99a">CLEAN<tspan x="1130" fill="#93a4cc">exit 0</tspan></text>
+  <line x1="1010" y1="246" x2="1220" y2="246" stroke="#5ef2ff" stroke-opacity=".2"/>
+  <text x="1010" y="270" class="t">table · text · JSON · SARIF</text>
+  <text x="1010" y="288" class="t">CI · SIEM · code scanning</text>
+
+  <!-- flows -->
+  <path d="M210 110 H262" class="flow"/>
+  <path d="M584 182 C604 182 600 116 622 116" class="flow"/>
+  <path d="M584 182 C604 182 600 236 622 236" class="flow"/>
+  <path d="M584 182 C604 182 600 356 622 356" class="flow"/>
+  <path d="M930 116 C960 116 960 160 982 160" class="flow"/>
+  <path d="M930 236 C960 236 960 182 982 182" class="flow"/>
+  <path d="M930 356 C966 356 966 206 982 206" class="flow"/>
+
+  <!-- training lane -->
+  <rect x="270" y="440" width="660" height="84" rx="10" fill="none" stroke="#8a9bc4" stroke-opacity=".35" stroke-dasharray="6 5"/>
+  <text x="290" y="470" class="k">TRAINING · ONCE, ON YOUR OWN DATA</text>
+  <text x="290" y="496" class="t">your benign software → self-model → detector repertoire</text>
+  <text x="290" y="514" class="t">confirmed family samples → memory cells (generalize to unseen variants)</text>
+  <path d="M606 440 V116 H622" class="flow" stroke-dasharray="4 4"/>
+  <path d="M606 236 H622" class="flow" stroke-dasharray="4 4"/>
+
+  <text x="990" y="470" class="k">NO NETWORK. EVER.</text>
+  <text x="990" y="496" class="t">one static binary · 10 MB image</text>
+  <text x="990" y="514" class="t">runs under --network none</text>
+</svg>
