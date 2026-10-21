@@ -278,6 +278,17 @@ pub fn solve(region: &[u8], op: Operation) -> Option<SolvedKey> {
     if window.iter().filter(|&&b| b == 0).count() * 20 > window.len() {
         return None;
     }
+    // Ciphertext is not already text. String sections (__cstring, Objective-C
+    // type encodings, string tables) are ≥75% printable; a key that remaps
+    // their digits and symbols into letters "gains" likelihood without
+    // decrypting anything. Measured: true ciphertext windows peak at 57%
+    // printable (weak keys over text keep much of it printable), while the
+    // string sections that produced false keys on macOS binaries had a
+    // median of 97%.
+    let printable = window.iter().filter(|&&b| is_printable(b)).count();
+    if printable * 4 > window.len() * 3 {
+        return None;
+    }
     let (baseline_letters, _) = text_stats(window);
     if baseline_letters * 2 >= window.len() {
         return None;
