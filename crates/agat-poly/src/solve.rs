@@ -45,26 +45,39 @@ pub struct SolvedKey {
     pub baseline_letters: usize,
 }
 
-/// How much a byte value looks like plaintext (column scoring): English
-/// character frequency (per mille, rounded) for lower-case letters and
-/// space, a third of that for upper case, small weights for digits and the
-/// punctuation common in payload strings (paths, URLs, headers), zero for
-/// non-printable bytes. Frequency, not just "is a letter", is what tells
-/// the right key byte from one a bit-flip away (`a` vs `c`, `a` vs `A`).
+/// How much a byte value looks like plaintext (column scoring): a
+/// fixed-point log-likelihood, `10·ln(p / p_nonprintable)`, under a simple
+/// model of payload text: English letter frequencies (upper case at a fifth
+/// of lower case), space, digits, the punctuation of paths/URLs/headers,
+/// and other printable characters; non-printable bytes score 0.
+///
+/// Log weights matter. With linear frequencies a single space outweighs a
+/// dozen letters, so one stray `!` that a bit-flipped key turns into a
+/// space could win a column. Summed log-probabilities bound every
+/// character's swing, and the right key byte wins on the column as a whole.
 fn weight(b: u8) -> u32 {
     const LOWER: [u32; 26] = [
-        65, 12, 22, 35, 100, 18, 16, 50, 57, 1, 6, 33, 20, 57, 63, 15, 1, 50, 53, 75, 23, 8, 19, 2,
-        16, 1,
+        67, 50, 56, 60, 71, 54, 53, 64, 65, 25, 43, 60, 55, 65, 66, 52, 25, 64, 65, 68, 56, 46, 54,
+        32, 53, 25,
+    ];
+    const UPPER: [u32; 26] = [
+        50, 34, 40, 44, 55, 38, 36, 48, 49, 9, 27, 44, 39, 49, 50, 36, 9, 48, 48, 52, 40, 30, 38,
+        16, 36, 9,
     ];
     match b {
-        b' ' => 150,
+        b' ' => 78,
         b'a'..=b'z' => LOWER[(b - b'a') as usize],
-        b'A'..=b'Z' => LOWER[(b - b'A') as usize] / 3 + 1,
-        b'0'..=b'9' => 8,
-        b'.' | b',' | b'/' | b':' | b'_' | b'-' | b'\n' => 6,
-        0x21..=0x7e | b'\t' | b'\r' => 2,
+        b'A'..=b'Z' => UPPER[(b - b'A') as usize],
+        b'.' | b',' | b'/' | b':' | b'_' | b'-' | b'\n' => 51,
+        b'0'..=b'9' => 37,
+        0x21..=0x7e | b'\t' | b'\r' => 37,
         _ => 0,
     }
+}
+
+/// Total plaintext log-likelihood of a buffer under [`weight`].
+fn likelihood(buf: &[u8]) -> u64 {
+    buf.iter().map(|&b| weight(b) as u64).sum()
 }
 
 /// Minimum ciphertext bytes per key column: fewer, and a column's few
@@ -153,14 +166,18 @@ fn column_histogram(window: &[u8], offset: usize, period: usize) -> [u32; 256] {
 /// samples the padding can win by a bit-flip. Strings are contiguous, so
 /// a position whose neighbours decrypt (under the other key bytes) to
 /// printable text is very likely inside a string: re-score each column
-/// from those positions only, and repeat while the key keeps changing.
+/// with those positions counted twice (once in the full column, once as
+/// context), and repeat while the key keeps changing.
 fn refine(window: &[u8], op: Operation, key: &mut [u8]) {
     let period = key.len();
     for _ in 0..3 {
         let plain = decrypt(window, op, key);
         let mut changed = false;
         for (j, key_byte) in key.iter_mut().enumerate() {
-            let mut h = [0u32; 256];
+            // Start from the whole column's vote and add the in-string
+            // positions on top: context sharpens the vote, but a few
+            // in-string samples must not override the full column.
+            let mut h = column_histogram(window, j, period);
             let mut n = 0;
             for p in (j..window.len()).step_by(period) {
                 let left = p > 0 && is_printable(plain[p - 1]);
@@ -194,10 +211,13 @@ fn minimal_period(key: &[u8]) -> Vec<u8> {
 
 /// Solve for the repeating key that `op` decrypts `region` with.
 ///
-/// Returns `None` unless the best decryption clearly gains letters over the
-/// undecrypted bytes (at least 1.1× plus 24; weak keys of small bytes leave
-/// ciphertext half-readable, so the gain can be modest) *and* contains a
-/// letter-rich readable run of at least [`MIN_TEXT_RUN`] characters. A
+/// Returns `None` unless the best decryption raises the plaintext
+/// log-likelihood by at least 8% over the undecrypted bytes *and* contains
+/// a letter-rich readable run of at least [`MIN_TEXT_RUN`] characters.
+/// Likelihood, not a letter count, is the measure because weak keys
+/// (`0x01`, `0x0a`) map letters onto other letters: the ciphertext keeps
+/// its letter count, but spaces turn into `*` and `e` into `o`. Measured
+/// gains for true keys run from 1.12× (weakest) to 2×. A
 /// window that is already at least half letters is not ciphertext and is
 /// declined outright; per-column overfitting of noise never produces such
 /// runs. The analyzer additionally only calls this when a decryptor loop
@@ -232,7 +252,8 @@ pub fn solve(region: &[u8], op: Operation) -> Option<SolvedKey> {
     let max = scored.iter().map(|s| s.1).max()?;
     // Shortest period within 3% of the best: longer periods overfit.
     let (key, letters, longest) = scored.into_iter().find(|s| s.1 * 100 >= max * 97)?;
-    (letters * 10 >= baseline_letters * 11 + 240 && longest >= MIN_TEXT_RUN).then_some(SolvedKey {
+    let gain_ok = likelihood(&decrypt(window, op, &key)) * 100 >= likelihood(window) * 108;
+    (gain_ok && longest >= MIN_TEXT_RUN).then_some(SolvedKey {
         op,
         key,
         letters,
