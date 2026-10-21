@@ -10,6 +10,23 @@ The release that turns the research engine into a deployable product.
 
 ### Added
 
+**Experience & polish**
+- An ASCII-art splash on bare `agat`, a shared `style` module (brand
+  palette, severity badges, meters), and colorized `scan`/`table`/`list`/
+  `repertoire info`/`cluster`/`divergence`/`show` output, all gated on a
+  global `--color auto|always|never` (honoring `NO_COLOR`).
+- A richer `agat --version` (commit, target, rustc) via a build script.
+- Live progress on large batch scans; a SIGPIPE fix so piping to
+  `head`/`grep -q` no longer panics.
+- `agat scan -` reads a sample from stdin for pipelines.
+- The TUI gained scrolling, sample search (`/`), a help overlay (`?`),
+  vim-style tab navigation, verdict-colored samples, and an empty-state
+  logo splash.
+- Docs: a user [GUIDE], [CONCEPTS], [DEPLOYMENT], [INTEGRATION], [FAQ],
+  [GLOSSARY] and a docs index; six architecture diagrams (pipeline,
+  lifecycle, antigen, fusion, deployment, crate graph); refreshed CLI,
+  TUI, and `agat serve` demo GIFs.
+
 **Operator surface**
 - `agat scan <files|dirs…>`: stateless one-shot scanning. Files are analyzed
   in memory, nothing is written, no vault password is needed. `--ingest`
