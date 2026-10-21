@@ -2,6 +2,8 @@
 #
 #   docker build -t agat .
 #   docker run --rm --network none -v "$HOME/.agat:/data" -v "$PWD:/scan:ro" agat scan /scan
+#   docker run --rm -p 127.0.0.1:8080:8080 -v "$HOME/.agat:/data" agat \
+#     serve --listen 0.0.0.0:8080 --allow-remote      # HTTP API, host-loopback only
 #
 # The runtime image is `scratch`: no shell, no package manager, no
 # network stack in use. agat makes no network calls; run it with
@@ -22,6 +24,7 @@ ENV TMPDIR=/tmp \
     AGAT_HOME=/data
 USER 65534:65534
 VOLUME ["/data"]
+EXPOSE 8080
 WORKDIR /scan
 ENTRYPOINT ["/agat"]
 CMD ["--help"]
