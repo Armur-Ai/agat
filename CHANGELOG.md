@@ -19,6 +19,9 @@ The release that turns the research engine into a deployable product.
 - Live progress on large batch scans; a SIGPIPE fix so piping to
   `head`/`grep -q` no longer panics.
 - `agat scan -` reads a sample from stdin for pipelines.
+- Project scaffolding: a Makefile (`make help`), a pinned `rust-toolchain.toml`,
+  `.editorconfig`, `rustfmt.toml`, `.gitattributes`, a Code of Conduct, and OCI
+  labels on the container.
 - The TUI gained scrolling, sample search (`/`), a help overlay (`?`),
   vim-style tab navigation, verdict-colored samples, and an empty-state
   logo splash.
