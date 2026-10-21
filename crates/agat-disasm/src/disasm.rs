@@ -75,16 +75,42 @@ pub fn linear_sweep(
     out
 }
 
-/// Recursive descent from `roots`. Each root is decoded sequentially;
-/// on conditional/unconditional branches and calls the direct target
-/// is added to the worklist. Indirect transfers and returns terminate
-/// the current sweep. Bounded by `max_instructions` total decodes.
+/// Recursive descent from `roots` over x86/x64 code. Each root is
+/// decoded sequentially; on conditional/unconditional branches and calls
+/// the direct target is added to the worklist. Indirect transfers and
+/// returns terminate the current sweep. Bounded by `max_instructions`.
 pub fn recursive_descent(
     bytes: &[u8],
     base_address: u64,
     bitness: u32,
     roots: &[u64],
     max_instructions: usize,
+) -> Vec<DisasmLine> {
+    let mut formatter = IntelFormatter::new();
+    let mut instr = Instruction::default();
+    descend(bytes, base_address, roots, max_instructions, |addr| {
+        let off = (addr - base_address) as usize;
+        let mut decoder = Decoder::with_ip(bitness, &bytes[off..], addr, DecoderOptions::NONE);
+        if !decoder.can_decode() {
+            return None;
+        }
+        decoder.decode_out(&mut instr);
+        Some((
+            make_line(bytes, base_address, &instr, &mut formatter),
+            instr.len(),
+        ))
+    })
+}
+
+/// The architecture-neutral recursive-descent driver. `decode_at(addr)`
+/// decodes one instruction (returning it and its length), or `None` when
+/// nothing can be decoded there.
+pub fn descend(
+    bytes: &[u8],
+    base_address: u64,
+    roots: &[u64],
+    max_instructions: usize,
+    mut decode_at: impl FnMut(u64) -> Option<(DisasmLine, usize)>,
 ) -> Vec<DisasmLine> {
     let mut visited: HashSet<u64> = HashSet::new();
     let end_address = base_address + bytes.len() as u64;
@@ -94,38 +120,24 @@ pub fn recursive_descent(
         .filter(|a| *a >= base_address && *a < end_address)
         .collect();
     let mut all: BTreeMap<u64, DisasmLine> = BTreeMap::new();
-    let mut formatter = IntelFormatter::new();
-    let mut instr = Instruction::default();
 
-    while let Some(addr) = work.pop_front() {
+    while let Some(start) = work.pop_front() {
         if all.len() >= max_instructions {
             break;
         }
-        if addr < base_address || addr >= end_address {
-            continue;
-        }
-        if visited.contains(&addr) {
-            continue;
-        }
-
-        let mut decoder = Decoder::with_ip(
-            bitness,
-            &bytes[(addr - base_address) as usize..],
-            addr,
-            DecoderOptions::NONE,
-        );
-
-        while decoder.can_decode() && all.len() < max_instructions {
-            decoder.decode_out(&mut instr);
-            let ip = instr.ip();
-            if visited.contains(&ip) {
+        let mut addr = start;
+        while addr >= base_address && addr < end_address && all.len() < max_instructions {
+            if visited.contains(&addr) {
                 break;
             }
-            visited.insert(ip);
-            let line = make_line(bytes, base_address, &instr, &mut formatter);
+            let Some((line, len)) = decode_at(addr) else {
+                break;
+            };
+            visited.insert(addr);
             let flow = line.flow;
             let target = line.branch_target;
-            all.insert(ip, line);
+            all.insert(addr, line);
+            addr += len.max(1) as u64;
 
             match flow {
                 FlowKind::Next => continue,

@@ -19,3 +19,5 @@ serde_json.workspace = true
 hex.workspace = true
 iced-x86.workspace = true
 petgraph.workspace = true
+yaxpeax-arm.workspace = true
+yaxpeax-arch.workspace = true

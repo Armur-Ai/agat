@@ -57,6 +57,8 @@ ed25519-dalek = { version = "2.1", features = ["rand_core"] }
 
 goblin = "0.8"
 iced-x86 = "1.21"
+yaxpeax-arm = "0.5"
+yaxpeax-arch = "0.3"
 petgraph = "0.6"
 
 chrono = { version = "0.4", default-features = false, features = ["serde", "clock"] }

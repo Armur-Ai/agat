@@ -1,7 +1,7 @@
 //! Disassembly and CFG construction.
 //!
-//! Phase 2 of the agat pipeline. Wraps iced-x86 for x86/x64
-//! disassembly and adds:
+//! Phase 2 of the agat pipeline. Wraps iced-x86 for x86/x64 and
+//! yaxpeax-arm for AArch64 disassembly, and adds:
 //!
 //! - linear sweep over executable byte regions
 //! - recursive descent from entry point, exports, and direct
@@ -9,11 +9,12 @@
 //! - leader-based basic-block construction
 //! - intra-procedural control-flow graph with typed edges
 //!
-//! For non-x86 architectures this crate returns an empty
+//! For other architectures this crate returns an empty
 //! [`DisasmFeatures`] with `bitness = 0` rather than failing — the
 //! analyzer must work on unknown samples too.
 
 pub mod analyzer;
+pub mod arm64;
 pub mod cfg;
 pub mod disasm;
 pub mod features;
