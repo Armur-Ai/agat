@@ -401,6 +401,17 @@ agat-tui       terminal verdict console
 
 Deep dive: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
+## 📖 Documentation
+
+| doc | |
+|---|---|
+| [User guide](docs/GUIDE.md) | install → train → scan → deploy, end to end |
+| [Concepts](docs/CONCEPTS.md) | how the immune model works, and its honest limits |
+| [Reading the output](docs/READING_OUTPUT.md) | a verdict, field by field |
+| [Deployment & operations](docs/DEPLOYMENT.md) | fleets, signed packs, air gap, hardening |
+| [Integration recipes](docs/INTEGRATION.md) | CI · SIEM · SOAR · quarantine |
+| [Architecture](docs/ARCHITECTURE.md) · [Roadmap](docs/PRODUCT_ROADMAP.md) | internals and direction |
+
 ## 📚 Citations
 
 agat implements published algorithms:
