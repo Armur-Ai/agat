@@ -18,6 +18,12 @@ RUN cargo build --release --locked -p agat-cli \
  && cp target/release/agat /out/agat
 
 FROM scratch
+LABEL org.opencontainers.image.title="agat" \
+      org.opencontainers.image.description="An adaptive immune system for binaries: offline detection of polymorphic, metamorphic, and AI-rewritten malware variants." \
+      org.opencontainers.image.source="https://github.com/Armur-Ai/agat" \
+      org.opencontainers.image.documentation="https://github.com/Armur-Ai/agat/blob/main/docs/GUIDE.md" \
+      org.opencontainers.image.licenses="AGPL-3.0-or-later" \
+      org.opencontainers.image.vendor="Armur-Ai"
 COPY --from=build --chown=65534:65534 /out/ /
 # SQLite may spill temp files; `scratch` has no /tmp of its own.
 ENV TMPDIR=/tmp \
