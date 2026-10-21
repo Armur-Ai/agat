@@ -77,6 +77,10 @@ agat runs that logic on binaries:
 > **MALICIOUS**. When they don't, agat tells you which axis fired so a human can
 > decide.
 
+<p align="center">
+  <img src="docs/assets/fusion.svg" alt="the recognition × danger matrix: each combination of non-self/self and safe/ambiguous/dangerous maps to a severity" width="88%">
+</p>
+
 ## ⚡ See it in 60 seconds
 
 <p align="center">
@@ -108,6 +112,19 @@ demo/run.sh --compare agat      # → IDENTICAL: laptop and --network none produ
 
 <p align="center">
   <img src="docs/assets/pipeline.svg" alt="agat pipeline: sample → behavioral pipeline → antigen → recognition, memory and danger → ScanResult" width="100%">
+</p>
+
+agat learns once and detects per sample:
+
+<p align="center">
+  <img src="docs/assets/lifecycle.svg" alt="the immune lifecycle: training builds a self-model, detector repertoire and family memory; detection presents a sample's antigen to them and fuses a verdict" width="100%">
+</p>
+
+Every sample is first distilled into a **mutation-invariant antigen** — the
+behavioral properties that survive the rewrites:
+
+<p align="center">
+  <img src="docs/assets/antigen.svg" alt="antigen construction: five analyzers feed six weighted feature groups that concatenate into one signature vector" width="100%">
 </p>
 
 | immune mechanism | algorithm | in agat |
@@ -203,6 +220,10 @@ agat mature <id> --family qakbot          # teach it a family; repeat per varian
 ```
 
 ### Ship it to an air-gapped fleet (signed model packs)
+
+<p align="center">
+  <img src="docs/assets/deployment.svg" alt="deployment: train once in the SOC, sign a model pack, and carry only the pack and public key across the air gap to scanners, CI, and SOAR" width="96%">
+</p>
 
 Train once in the SOC, then deploy the model as **one signed file**. No agat
 home to copy, no network on the receiving side.
