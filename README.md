@@ -244,10 +244,17 @@ The JSON is a versioned contract with a published JSON Schema
 Exit codes are the contract: **`0`** clean · **`2`** review/suspicious ·
 **`3`** malicious · **`1`** agat itself failed.
 
-For the analyst's chair, `agat tui` is a terminal verdict console over the
-sample library: severity-colored samples, each verdict's recognition and
-danger axes, the model that made the call, and per-analyzer drill-downs
-(disassembly, polymorphic recovery, metamorphic form, AI signals).
+### The analyst's chair (`agat tui`)
+
+<p align="center">
+  <img src="docs/assets/tui.gif" alt="agat's terminal verdict console: a severity-colored sample list, the recognition and danger axes, analyzer tabs, search, and a help overlay" width="92%">
+</p>
+
+`agat tui` is an interactive console over the sample library: a
+severity-colored sample list, each verdict's recognition and danger axes
+with meters, the model that made the call, and per-analyzer drill-downs
+(disassembly, polymorphic recovery, metamorphic form, AI signals). Search
+with `/`, scroll with `PgUp`/`PgDn`, and press `?` for every key.
 
 ### Plug it into SOAR, mail gateways, and pipelines (`agat serve`)
 
