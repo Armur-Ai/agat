@@ -285,6 +285,15 @@ pub fn signals_from_features(
         if packed {
             add("packer_section_name", SignalClass::Pamp, 0.6);
         }
+        // Executable code shouldn't be high-entropy; a near-random
+        // executable section is packed/encrypted code — a packer tell.
+        let high_entropy_code =
+            sf.parsed.sections.iter().any(|sec| {
+                sec.characteristics.executable && sec.file_size >= 256 && sec.entropy > 7.2
+            });
+        if high_entropy_code {
+            add("high_entropy_executable_section", SignalClass::Pamp, 0.5);
+        }
         let suspicious = sf.parsed.imports.iter().any(|imp| {
             let n = imp.name.to_ascii_lowercase();
             SUSPICIOUS_IMPORTS.iter().any(|s| n.contains(s))
@@ -408,6 +417,33 @@ mod tests {
                 samples: vec![],
             },
         }
+    }
+
+    fn exec_section(name: &str, entropy: f64, size: u64) -> Section {
+        let mut s = section(name);
+        s.characteristics.executable = true;
+        s.entropy = entropy;
+        s.file_size = size;
+        s
+    }
+
+    #[test]
+    fn high_entropy_executable_section_raises_a_pamp() {
+        let mut packed = sf_with_sections(&[]);
+        packed.parsed.sections = vec![exec_section(".text", 7.6, 4096)];
+        let sig = signals_from_features(Some(&packed), None, None, None);
+        assert!(sig
+            .contributors
+            .iter()
+            .any(|c| c.name == "high_entropy_executable_section"));
+        // Normal code entropy (~6) does not fire.
+        let mut normal = sf_with_sections(&[]);
+        normal.parsed.sections = vec![exec_section(".text", 6.1, 4096)];
+        let sig = signals_from_features(Some(&normal), None, None, None);
+        assert!(!sig
+            .contributors
+            .iter()
+            .any(|c| c.name == "high_entropy_executable_section"));
     }
 
     #[test]
