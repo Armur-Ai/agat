@@ -22,6 +22,7 @@ one — the generalization benchmark in `bench/`.
 Usage:
     python3 tools/meta_gen.py [prefix]              # v1, v2, v3
     python3 tools/meta_gen.py [prefix] --count 8    # v1..v8
+    python3 tools/meta_gen.py [prefix] --substitute 12   # s1..s12: instruction substitution
 """
 import argparse
 import itertools
@@ -136,6 +137,58 @@ def synth_decryptor(
     )
 
 
+# Equivalent encodings for instruction substitution, the other half of
+# metamorphism: same semantics, different instructions.
+_PTR_LOAD = {
+    "mov rsi, imm64": lambda va: b"\x48\xbe" + struct.pack("<Q", va),
+    "push imm32; pop rsi": lambda va: b"\x68" + struct.pack("<I", va) + b"\x5e",
+}
+_ZERO = {
+    "xor eax, eax": b"\x31\xc0",
+    "sub eax, eax": b"\x29\xc0",
+    "mov eax, 0": b"\xb8\x00\x00\x00\x00",
+}
+_PTR_STEP = {
+    "inc rsi": b"\x48\xff\xc6",
+    "add rsi, 1": b"\x48\x83\xc6\x01",
+    "lea rsi, [rsi+1]": b"\x48\x8d\x76\x01",
+}
+_CTR_STEP = {
+    "dec ecx": b"\xff\xc9",
+    "sub ecx, 1": b"\x83\xe9\x01",
+    "add ecx, -1": b"\x83\xc1\xff",
+}
+
+
+def substituted_decryptor(payload_vaddr: int, payload_len: int, key: int, choice) -> bytes:
+    """The rsi/ecx decryptor built from one choice of equivalent
+    instructions per slot: pointer load, a zeroing idiom, pointer step,
+    and counter step. The loop body's length varies with the choice, so
+    the `jne` displacement is computed, not fixed.
+
+        <ptr load>        ; mov rsi, payload  |  push payload; pop rsi
+        <zero eax>        ; xor / sub / mov 0
+        mov ecx, len
+      .loop:
+        xor byte [rsi], key
+        <ptr step>        ; inc / add 1 / lea +1
+        <ctr step>        ; dec / sub 1 / add -1
+        jne .loop
+        hlt
+    """
+    load, zero, pstep, cstep = choice
+    body = b"\x80\x36" + bytes([key & 0xFF]) + _PTR_STEP[pstep] + _CTR_STEP[cstep]
+    rel8 = -(len(body) + 2)
+    return (
+        _PTR_LOAD[load](payload_vaddr)
+        + _ZERO[zero]
+        + b"\xb9" + struct.pack("<I", payload_len)
+        + body
+        + b"\x75" + struct.pack("<b", rel8)
+        + b"\xf4"
+    )
+
+
 def build_elf(decryptor: bytes, ciphertext: bytes) -> bytes:
     EHDR_SIZE = 64
     PHDR_SIZE = 56
@@ -211,7 +264,32 @@ def main() -> int:
         default=3,
         help="number of metamorphic variants to emit (>=1; v1..v3 are fixed, extras are synthesized)",
     )
+    ap.add_argument(
+        "--substitute",
+        type=int,
+        default=0,
+        metavar="N",
+        help="instead of --count variants, emit N instruction-substitution variants "
+        "(<prefix>_s1..sN): equivalent pointer loads, zeroing idioms, and "
+        "increment/decrement forms that must canonicalize to one CFG fingerprint",
+    )
     args = ap.parse_args()
+
+    if args.substitute:
+        plaintext = build_plaintext(args.payload_size, args.seed)
+        ciphertext = bytes(b ^ KEY for b in plaintext)
+        combos = list(itertools.product(_PTR_LOAD, _ZERO, _PTR_STEP, _CTR_STEP))
+        random.Random(args.seed ^ 0x5B57).shuffle(combos)
+        if args.substitute > len(combos):
+            print(f"--substitute is at most {len(combos)}", file=sys.stderr)
+            return 2
+        for i, choice in enumerate(combos[: args.substitute], start=1):
+            decryptor = substituted_decryptor(0x401000, len(ciphertext), KEY, choice)
+            path = f"{args.prefix}_s{i}.bin"
+            with open(path, "wb") as f:
+                f.write(build_elf(decryptor, ciphertext))
+            print(f"wrote {path}  ({' | '.join(choice)})")
+        return 0
 
     if args.count < 1:
         print("--count must be >= 1", file=sys.stderr)
