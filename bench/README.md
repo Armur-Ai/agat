@@ -8,6 +8,7 @@ with `python3` and the agat workspace.
 | `run.sh` | corpus-level **detection rate** on held-out variants and **false-positive rate** on held-out real benign binaries (CI-gateable) |
 | `generalize.sh` | the single headline moment: one never-seen variant recognized as its family |
 | `sweep.sh` | the affinity weights aren't a hand-tuned knife edge: detection/FP under 32 perturbed weightings |
+| `keys.sh` | register-held and multi-byte decryptor keys are recovered *exactly*, and never "recovered" from benign data |
 | `fetch-benign.sh` | builds the real benign corpus `run.sh` and `sweep.sh` measure FPs on |
 
 ## `run.sh` — detection and false-positive rates
@@ -114,6 +115,52 @@ real programs, so they sit far apart in antigen space and this is an
 easy separation. Stability here shows the weights are not a knife edge on
 this corpus; it does not show the same for a real malware family that
 lives closer to benign software.
+
+## `keys.sh` — key recovery without an immediate key
+
+Many decryptor stubs keep their key in a register and rotate it
+(`xor [rsi], al` / `ror rax, 8`), so no key appears in the instruction
+stream. agat solves for the key from the ciphertext itself
+(`agat_poly::solve`: per-column log-likelihood scoring, context
+refinement, period selection). The benchmark generates random
+register-held keys of 1, 2, 4 and 8 bytes (`tools/poly_gen.py
+--rolling-key`) and requires the **exact** key: a near miss would
+corrupt the plaintext fingerprint, so it counts as a failure.
+
+```sh
+bench/keys.sh                                          # 40 keys, 1 KiB payloads
+bench/keys.sh --per-length 50 --payload-size 512       # the hard regime
+bench/keys.sh --stress bench/corpus/debian-bin         # + false-positive stress
+```
+
+### Representative result (50 keys per length)
+
+| payload | 1-byte | 2-byte | 4-byte | 8-byte |
+|---|---|---|---|---|
+| 512 B | 50/50 | 50/50 | 50/50 | 44/50 |
+| 768 B | 50/50 | 50/50 | 50/50 | 48/50 |
+| 1 KiB | 50/50 | 50/50 | 50/50 | **50/50** |
+| 2 KiB | 50/50 | 50/50 | 50/50 | **50/50** |
+
+Exact recovery needs about 128 ciphertext bytes per key byte. Below that,
+8-byte keys sometimes come back with one byte a few bits off, and the
+report says so.
+
+### False-positive stress
+
+`--stress DIR` removes the analyzer's gate (it only solves when it has
+found a decryptor loop) and runs the solver under every operation on
+every non-executable section of every benign binary in `DIR`:
+
+```
+220 files · 5388 non-executable sections · 16164 solve attempts · 0 keys accepted
+```
+
+That zero was earned. The first acceptance rule accepted 5,537 keys here,
+by turning zero-filled tables into "text" made of spaces, then small-integer
+tables into letter-range gibberish. The fixes (word-like text only, and
+declining windows over 5% zero bytes, since true ciphertext measured ≤1.8%)
+are documented in `crates/agat-poly/src/solve.rs`.
 
 ## `generalize.sh` — recognition of unseen variants
 
