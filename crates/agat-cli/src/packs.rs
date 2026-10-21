@@ -219,9 +219,13 @@ fn print_manifest(m: &pack::PackManifest) {
 
 /// `agat repertoire info`: what the active model is and where it came from.
 pub fn cmd_info(store: &Store) -> Result<()> {
+    let st = crate::style::Style::new(crate::style::use_color());
+    let head = |t: &str| println!("{}", st.bold(&st.fg(crate::style::palette::CYAN, t)));
+    let kv = |k: &str, v: String| println!("  {:<12}{}", k, v);
     let Some(repertoire) = load_repertoire(store)? else {
-        println!("no model yet — train one (`agat self build`, `agat repertoire generate`)");
-        println!("or import a pack (`agat repertoire import <file.agatpack>`).");
+        println!("{}", st.dim("no model yet"));
+        println!("train one:  agat self build <ids…> && agat repertoire generate");
+        println!("or import:  agat repertoire import <file.agatpack> --trust <key.pub>");
         return Ok(());
     };
     let self_points = load_self_model(store)?.map(|s| s.points.len()).unwrap_or(0);
@@ -230,36 +234,55 @@ pub fn cmd_info(store: &Store) -> Result<()> {
 
     match pack::installed(store)? {
         Some(p) => {
-            println!("active model: pack {} v{}", p.name, p.version);
-            println!("  sha256      {}", p.payload_sha256);
-            println!(
-                "  signed by   {}",
-                p.signer.as_deref().unwrap_or("(unsigned)")
+            head("ACTIVE MODEL");
+            kv(
+                "source",
+                format!("pack {} v{}", st.bold(&p.name), p.version),
             );
-            println!("  installed   {}", p.installed_at);
+            kv("sha256", st.dim(&p.payload_sha256));
+            kv(
+                "signed by",
+                match &p.signer {
+                    Some(k) => st.fg(crate::style::palette::GREEN, k),
+                    None => st.dim("(unsigned)"),
+                },
+            );
+            kv("installed", st.dim(&p.installed_at));
         }
-        None => println!("active model: trained locally"),
+        None => {
+            head("ACTIVE MODEL");
+            kv("source", "trained locally".to_string());
+        }
     }
-    println!(
-        "  model       {self_points} self points · {} detectors ({naive} naive, {matured} matured) · dim {}",
-        repertoire.len(),
-        repertoire.dim
+    kv(
+        "detectors",
+        format!(
+            "{} ({} naive, {} matured) · dim {}",
+            repertoire.len(),
+            naive,
+            matured,
+            repertoire.dim
+        ),
     );
-    println!(
-        "  antigen     {}",
-        agat_engine::antigen_config().fingerprint()
+    kv("self points", self_points.to_string());
+    kv(
+        "antigen",
+        st.dim(&agat_engine::antigen_config().fingerprint()),
     );
+
     let families = memory.families();
+    println!();
     if families.is_empty() {
-        println!("  families    (none — anomaly detection only)");
+        head("FAMILIES");
+        println!("  {}", st.dim("none — anomaly detection only"));
     } else {
-        println!("  families");
+        head(&format!("FAMILIES ({})", families.len()));
         for f in families {
             let cells: Vec<_> = memory.cells.iter().filter(|c| c.family == f).collect();
             let variants: u32 = cells.iter().map(|c| c.variants).sum();
             println!(
-                "    {:<20} {} cell{} · {} variant{}",
-                f,
+                "  {}  {} cell{} · {} variant{}",
+                st.fg(crate::style::palette::VIOLET, &format!("{f:<20}")),
                 cells.len(),
                 if cells.len() == 1 { "" } else { "s" },
                 variants,
