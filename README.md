@@ -121,7 +121,8 @@ demo/run.sh --compare agat      # → IDENTICAL: laptop and --network none produ
 Under the immune core sits a full binary-analysis pipeline, written from scratch
 in Rust:
 
-- **Static** (`agat-static`): PE/ELF parsing, sliding-window entropy, string
+- **Static** (`agat-static`): PE/ELF/Mach-O parsing (including universal
+  binaries), sliding-window entropy, string
   extraction, imports/exports, SHA-256 / MD5 / imphash.
 - **Disassembly** (`agat-disasm`): x86/x64 recursive descent with CFG construction.
 - **Polymorphic** (`agat-poly`): finds the decryptor loop, **recovers the key**,
@@ -158,6 +159,7 @@ offline.
 |---|---|---|
 | recognizes variants it has **never seen** | `bench/run.sh`: train on 8 metamorphic variants, test 8 held-out ones | **8 / 8 detected**, all attributed to the family |
 | doesn't flag normal software | same run: **110 held-out real Debian x86-64 binaries** | **0 / 110 false positives** |
+| …on macOS too | same run: **448 held-out macOS system binaries** (Mach-O, x86-64 slice) | **0 / 448 malicious**, 1.6% review |
 | a single held-out sibling, end to end | `bench/generalize.sh` | recognized, affinity **0.92**, via memory cell |
 | not a hand-tuned knife edge | `bench/sweep.sh`: retrain under 32 perturbed weightings (each weight ×0.5–×2) | detection **100%** and FPs **0%** in every one |
 | truly air-gapped | `demo/run.sh --compare` under `docker run --network none` | **byte-identical** transcript |
@@ -297,8 +299,8 @@ transfer stations.
 
 Defenders deserve exact limits, so here they are:
 
-- **Coverage**: x86/x64 PE and ELF. Mach-O is detected but not parsed; ARM is not
-  disassembled. Key recovery covers repeating XOR/ADD/SUB keys up to 16 bytes
+- **Coverage**: x86/x64 PE, ELF, and Mach-O (thin, or the x86-64 slice of a
+  universal binary). ARM code is not disassembled. Key recovery covers repeating XOR/ADD/SUB keys up to 16 bytes
   (immediate or register-held); non-repeating keystreams (RC4, LCG-derived) and
   multi-stage decryptors are out of reach without emulation. Metamorphic
   folding covers common single-instruction and push/pop substitutions, not
@@ -321,7 +323,8 @@ Defenders deserve exact limits, so here they are:
 - [x] `agat serve`: local HTTP endpoint for SOAR / pipeline integration
 - [x] Key-less recovery of register-held and multi-byte repeating keys
 - [x] Instruction-substitution folding in the metamorphic canonical form
-- [ ] Coverage: Mach-O, ARM64, instruction reordering, keystream ciphers
+- [x] Mach-O, including universal binaries
+- [ ] Coverage: ARM64 disassembly, instruction reordering, keystream ciphers
 - [ ] `agat-rewriter`: ethically-scoped fixture generator for AI-rewrite research
 
 Full plan: [`docs/PRODUCT_ROADMAP.md`](docs/PRODUCT_ROADMAP.md).
@@ -333,7 +336,7 @@ A Cargo workspace of small, independently testable crates:
 ```
 agat-core      types, ScanResult contract, encrypted vault
 agat-store     SQLite persistence: features, self-model, repertoire, memory
-agat-static    PE/ELF parse · entropy · strings · imports   ┐
+agat-static    PE/ELF/Mach-O parse · entropy · strings      ┐
 agat-disasm    x86/x64 recursive descent + CFG              │ antigen
 agat-poly      decryptor → key → plaintext fingerprint      │ presentation
 agat-meta      canonical form + Weisfeiler–Lehman hashing   │
