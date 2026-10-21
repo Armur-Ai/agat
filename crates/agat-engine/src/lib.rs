@@ -18,6 +18,7 @@
 //! `self build` / `mature` commands share one definition of where each
 //! immune structure lives and how it is (de)serialized.
 
+pub mod pack;
 pub mod sarif;
 
 use std::collections::{HashMap, HashSet};
