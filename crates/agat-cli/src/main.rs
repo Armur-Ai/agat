@@ -125,7 +125,8 @@ enum Cmd {
 #[derive(clap::Args)]
 struct OutputArgs {
     /// Output format: text, json (an object for one file, an array for a
-    /// batch), or sarif (SARIF 2.1.0, one finding per non-clean sample).
+    /// batch), sarif (SARIF 2.1.0, one finding per non-clean sample), or
+    /// table (one line per file).
     #[arg(long, value_enum, conflicts_with_all = ["json", "sarif"])]
     output: Option<config::OutputFormat>,
     /// Shorthand for `--output json`.
@@ -438,6 +439,7 @@ fn cmd_scan(
                 immune::print_report(r);
             }
         }
+        immune::OutputFormat::Table => immune::print_table(&results),
     }
 
     // Worst severity across the batch drives the exit code.

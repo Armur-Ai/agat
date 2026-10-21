@@ -5,7 +5,7 @@
 //!
 //! ```toml
 //! [scan]
-//! output = "json"        # text | json | sarif
+//! output = "json"        # text | json | sarif | table
 //! fail_on = "suspicious" # review | suspicious | malicious | never
 //!
 //! [danger]
@@ -35,6 +35,9 @@ pub enum OutputFormat {
     Json,
     /// SARIF 2.1.0 log — one finding per non-clean sample.
     Sarif,
+    /// One line per file (severity, family, affinity, danger, path) and a
+    /// batch summary. Built for scanning many files at a glance.
+    Table,
 }
 
 /// The lowest severity that makes `scan`/`recognize` exit non-zero.

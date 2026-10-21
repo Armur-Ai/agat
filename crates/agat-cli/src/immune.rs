@@ -189,6 +189,7 @@ pub fn cmd_recognize(
             )))?
         ),
         OutputFormat::Text => print_report(&result),
+        OutputFormat::Table => print_table(std::slice::from_ref(&result)),
     }
     Ok(result.severity())
 }
@@ -262,4 +263,69 @@ pub fn print_report(r: &ScanResult) {
     if r.verdict.policy.is_some() {
         println!("  (verdict set by operator policy; the axes above are unchanged)");
     }
+}
+
+/// Whether to color terminal output: stdout is a terminal and `NO_COLOR`
+/// is unset (https://no-color.org).
+fn use_color() -> bool {
+    use std::io::IsTerminal;
+    std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none()
+}
+
+fn paint(text: &str, sev: Severity, color: bool) -> String {
+    if !color {
+        return text.to_string();
+    }
+    let code = match sev {
+        Severity::Malicious => "1;31",
+        Severity::Suspicious => "1;33",
+        Severity::Review => "36",
+        Severity::Clean => "32",
+    };
+    format!("\x1b[{code}m{text}\x1b[0m")
+}
+
+/// Render results as one line per file plus a batch summary.
+pub fn print_table(results: &[ScanResult]) {
+    let color = use_color();
+    println!(
+        "{:<11} {:<14} {:>8}  {:<16} FILE",
+        "SEVERITY", "FAMILY", "AFFINITY", "DANGER"
+    );
+    for r in results {
+        let sev = r.severity();
+        let label = match sev {
+            Severity::Malicious => "MALICIOUS",
+            other => other.label(),
+        };
+        let affinity = if r.recognition.recognized {
+            format!("{:.3}", r.recognition.affinity)
+        } else {
+            "-".to_string()
+        };
+        let mut family = r.recognition.family.clone().unwrap_or_else(|| "-".into());
+        if family.chars().count() > 14 {
+            family = family.chars().take(13).collect::<String>() + "…";
+        }
+        let name = r.sample.name.clone().unwrap_or_else(|| r.sample.short.clone());
+        let policy = r.verdict.policy.as_deref().map(|p| format!("  [{p}]")).unwrap_or_default();
+        println!(
+            "{} {:<14} {:>8}  {:<16} {}{}",
+            paint(&format!("{label:<11}"), sev, color),
+            family,
+            affinity,
+            format!("{:.2} {}", r.danger.score, r.danger.context),
+            name,
+            policy
+        );
+    }
+    let count = |s: Severity| results.iter().filter(|r| r.severity() == s).count();
+    println!(
+        "\n{} scanned · {} malicious · {} suspicious · {} review · {} clean",
+        results.len(),
+        count(Severity::Malicious),
+        count(Severity::Suspicious),
+        count(Severity::Review),
+        count(Severity::Clean)
+    );
 }
