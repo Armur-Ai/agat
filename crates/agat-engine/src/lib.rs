@@ -26,8 +26,8 @@ use std::collections::{HashMap, HashSet};
 use agat_ai::{AiAnalyzer, AiFeatures};
 use agat_antigen::{Antigen, AntigenConfig};
 use agat_core::{
-    AnalysisContext, Analyzer, AntigenSummary, DangerSummary, RecognitionSummary, Sample, SampleId,
-    SampleKind, SampleMetadata, SampleRef, ScanResult, Severity, SignalSummary, Verdict,
+    AnalysisContext, Analyzer, AntigenSummary, DangerSummary, ModelRef, RecognitionSummary, Sample,
+    SampleId, SampleKind, SampleMetadata, SampleRef, ScanResult, Severity, SignalSummary, Verdict,
     SCAN_SCHEMA_VERSION,
 };
 use agat_disasm::DisasmAnalyzer;
@@ -205,6 +205,7 @@ pub struct ImmuneModel {
     self_model: Option<SelfModel>,
     known_families: usize,
     policy: ScanPolicy,
+    model_ref: ModelRef,
 }
 
 impl ImmuneModel {
@@ -214,7 +215,18 @@ impl ImmuneModel {
         let repertoire = load_repertoire(store)?.ok_or(ScanError::NoRepertoire)?;
         let memory = load_memory(store)?;
         let self_model = load_self_model(store)?;
-        Ok(Self::from_parts(repertoire, &memory, self_model))
+        let mut model = Self::from_parts(repertoire, &memory, self_model);
+        if let Some(p) = pack::installed(store)? {
+            model.model_ref = ModelRef {
+                source: "pack".to_string(),
+                name: Some(p.name),
+                version: Some(p.version),
+                sha256: Some(p.payload_sha256),
+                signer: p.signer,
+                antigen_fingerprint: model.antigen_cfg.fingerprint(),
+            };
+        }
+        Ok(model)
     }
 
     /// Assemble a model from in-memory immune state (e.g. one trained
@@ -237,6 +249,7 @@ impl ImmuneModel {
             self_model,
             known_families: memory.families().len(),
             policy: ScanPolicy::default(),
+            model_ref: local_model_ref(&antigen_config()),
         }
     }
 
@@ -244,7 +257,13 @@ impl ImmuneModel {
     /// model's self-model, repertoire, and memory were trained with.
     pub fn with_antigen_config(mut self, cfg: AntigenConfig) -> Self {
         self.antigen_cfg = cfg;
+        self.model_ref.antigen_fingerprint = cfg.fingerprint();
         self
+    }
+
+    /// Which model this is, as reported in every [`ScanResult`].
+    pub fn model_ref(&self) -> &ModelRef {
+        &self.model_ref
     }
 
     /// Scan under `policy` instead of the defaults.
@@ -288,6 +307,7 @@ impl ImmuneModel {
             &danger,
             self.known_families,
         );
+        result.model = Some(self.model_ref.clone());
         self.policy.apply(&mut result);
         Ok(result)
     }
@@ -302,6 +322,17 @@ impl ImmuneModel {
             .map(String::from);
         let (sample, map) = analyze_bytes(bytes, original)?;
         self.scan(&sample.id, name, &map)
+    }
+}
+
+fn local_model_ref(cfg: &AntigenConfig) -> ModelRef {
+    ModelRef {
+        source: "local".to_string(),
+        name: None,
+        version: None,
+        sha256: None,
+        signer: None,
+        antigen_fingerprint: cfg.fingerprint(),
     }
 }
 
@@ -392,6 +423,7 @@ pub fn assemble(
             signals,
         },
         verdict,
+        model: None,
     }
 }
 

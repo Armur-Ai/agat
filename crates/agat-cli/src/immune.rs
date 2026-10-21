@@ -285,6 +285,9 @@ pub fn print_report(r: &ScanResult) {
     if r.verdict.policy.is_some() {
         println!("  (verdict set by operator policy; the axes above are unchanged)");
     }
+    if let Some(m) = &r.model {
+        println!("\nmodel  {}", describe_model(m));
+    }
 }
 
 /// Whether to color terminal output: stdout is a terminal and `NO_COLOR`
@@ -351,6 +354,9 @@ pub fn print_table(results: &[ScanResult]) {
         );
     }
     let count = |s: Severity| results.iter().filter(|r| r.severity() == s).count();
+    if let Some(m) = results.first().and_then(|r| r.model.as_ref()) {
+        println!("\nmodel  {}", describe_model(m));
+    }
     println!(
         "\n{} scanned · {} malicious · {} suspicious · {} review · {} clean",
         results.len(),
@@ -359,4 +365,20 @@ pub fn print_table(results: &[ScanResult]) {
         count(Severity::Review),
         count(Severity::Clean)
     );
+}
+
+/// One-line description of the model that produced a result.
+pub fn describe_model(m: &agat_core::ModelRef) -> String {
+    match m.source.as_str() {
+        "pack" => format!(
+            "pack {} v{} · {}",
+            m.name.as_deref().unwrap_or("?"),
+            m.version.as_deref().unwrap_or("?"),
+            match &m.signer {
+                Some(k) => format!("signed by {k}"),
+                None => "unsigned".to_string(),
+            }
+        ),
+        _ => "trained locally".to_string(),
+    }
 }

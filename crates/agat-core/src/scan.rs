@@ -170,6 +170,29 @@ pub struct Verdict {
     pub policy: Option<String>,
 }
 
+/// Which trained model produced a result: needed to audit or reproduce
+/// a verdict, since the same file can score differently under another
+/// model.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ModelRef {
+    /// `"pack"` for an imported model pack, `"local"` for a model trained
+    /// in this agat home.
+    pub source: String,
+    /// Pack name and version (packs only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    /// SHA-256 of the pack payload (packs only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sha256: Option<String>,
+    /// Key id of the pack's trusted signer (signed packs only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signer: Option<String>,
+    /// Fingerprint of the antigen metric space the model scores in.
+    pub antigen_fingerprint: String,
+}
+
 /// The complete, machine-readable outcome of scanning one sample.
 ///
 /// Serialize this to JSON for pipelines; render [`verdict`](Self::verdict)
@@ -188,6 +211,10 @@ pub struct ScanResult {
     pub recognition: RecognitionSummary,
     pub danger: DangerSummary,
     pub verdict: Verdict,
+    /// The model that produced this result. Absent only in results
+    /// written before this field existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<ModelRef>,
 }
 
 impl ScanResult {

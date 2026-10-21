@@ -101,6 +101,7 @@ pub fn to_sarif(results: &[ScanResult]) -> Value {
                 "affinity": r.recognition.affinity,
                 "dangerScore": r.danger.score,
                 "dangerContext": r.danger.context,
+                "model": r.model,
                 "schemaVersion": r.schema_version
             }
         }));
@@ -165,6 +166,7 @@ mod tests {
                 safe: 0.1,
                 signals: vec![],
             },
+            model: None,
             verdict: Verdict {
                 severity: sev,
                 summary: "s".into(),

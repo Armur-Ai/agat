@@ -468,14 +468,24 @@ mod tests {
         let dst = Store::open_in_memory().unwrap();
         let info = install(&dst, &verified).unwrap();
         assert_eq!(info.name, "acme");
-        assert_eq!(installed(&dst).unwrap(), Some(info));
+        assert_eq!(installed(&dst).unwrap(), Some(info.clone()));
         assert_eq!(
             dst.get_repertoire(SLOT).unwrap(),
             src.get_repertoire(SLOT).unwrap(),
             "repertoire must arrive byte-identical"
         );
-        // The installed model is usable by the engine.
-        crate::ImmuneModel::load(&dst).unwrap();
+        // The installed model is usable by the engine and reports its pack.
+        let model = crate::ImmuneModel::load(&dst).unwrap();
+        let r = model.model_ref();
+        assert_eq!(r.source, "pack");
+        assert_eq!(r.name.as_deref(), Some("acme"));
+        assert_eq!(r.sha256.as_deref(), Some(info.payload_sha256.as_str()));
+        assert_eq!(r.signer, info.signer);
+        // A locally trained model says so.
+        assert_eq!(
+            crate::ImmuneModel::load(&src).unwrap().model_ref().source,
+            "local"
+        );
     }
 
     #[test]
