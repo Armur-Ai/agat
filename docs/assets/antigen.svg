@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="520" viewBox="0 0 1100 520" role="img" aria-label="antigen construction: the five analyzers feed six weighted feature groups that concatenate into one mutation-invariant signature vector">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#03050b"/><stop offset="1" stop-color="#0c0a1d"/></linearGradient>
+    <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1" fill="#5ef2ff" fill-opacity="0.06"/></pattern>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#5ef2ff" fill-opacity="0.7"/></marker>
+    <linearGradient id="sig" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#5ef2ff"/><stop offset="1" stop-color="#d07bff"/></linearGradient>
+    <style>
+      .t    { font:11.5px ui-monospace,Menlo,monospace; fill:#93a4cc; }
+      .h    { font:700 13px ui-monospace,Menlo,monospace; fill:#e8efff; }
+      .grp  { font:700 13px ui-monospace,Menlo,monospace; fill:#0c0a1d; }
+      .lab  { font:700 11px ui-monospace,Menlo,monospace; letter-spacing:2px; fill:#8fa8ff; }
+      .flow { stroke:#5ef2ff; stroke-opacity:.45; stroke-width:1.3; fill:none; marker-end:url(#a); }
+      .cap  { font:11px ui-monospace,Menlo,monospace; fill:#c3cfe8; }
+    </style>
+  </defs>
+  <rect width="1100" height="520" fill="url(#bg)"/><rect width="1100" height="520" fill="url(#dots)"/>
+  <text x="550" y="42" text-anchor="middle" class="h">From a binary to a mutation-invariant antigen</text>
+  <text x="550" y="64" text-anchor="middle" class="t">the properties that survive register renaming, re-encoding, repacking and rewriting</text>
+
+  <!-- analyzers column -->
+  <text x="60" y="100" class="lab">ANALYZERS</text>
+  <g>
+    <rect x="48" y="112" width="150" height="40" rx="7" fill="#0b1226" stroke="#5ef2ff" stroke-opacity=".4"/><text x="62" y="137" class="h">static</text>
+    <rect x="48" y="164" width="150" height="40" rx="7" fill="#0b1226" stroke="#5ef2ff" stroke-opacity=".4"/><text x="62" y="189" class="h">disasm + CFG</text>
+    <rect x="48" y="216" width="150" height="40" rx="7" fill="#0b1226" stroke="#5ef2ff" stroke-opacity=".4"/><text x="62" y="241" class="h">poly</text>
+    <rect x="48" y="268" width="150" height="40" rx="7" fill="#0b1226" stroke="#5ef2ff" stroke-opacity=".4"/><text x="62" y="293" class="h">meta</text>
+    <rect x="48" y="320" width="150" height="40" rx="7" fill="#0b1226" stroke="#5ef2ff" stroke-opacity=".4"/><text x="62" y="345" class="h">ai</text>
+  </g>
+
+  <!-- feature groups column -->
+  <text x="330" y="100" class="lab">FEATURE GROUPS  (weighted)</text>
+  <g>
+    <rect x="310" y="104" width="300" height="46" rx="8" fill="#2bd99a" fill-opacity=".85"/><text x="326" y="132" class="grp">opcode-class distribution</text>
+    <rect x="310" y="158" width="300" height="46" rx="8" fill="#49c7e8" fill-opacity=".85"/><text x="326" y="186" class="grp">canonical-block histogram</text>
+    <rect x="310" y="212" width="300" height="46" rx="8" fill="#6fa8ff" fill-opacity=".85"/><text x="326" y="240" class="grp">CFG shape (blocks, edges, …)</text>
+    <rect x="310" y="266" width="300" height="46" rx="8" fill="#9f8bff" fill-opacity=".85"/><text x="326" y="294" class="grp">entropy summary</text>
+    <rect x="310" y="320" width="300" height="46" rx="8" fill="#c583ff" fill-opacity=".85"/><text x="326" y="348" class="grp">stylometry</text>
+    <rect x="310" y="374" width="300" height="46" rx="8" fill="#e07be0" fill-opacity=".85"/><text x="326" y="402" class="grp">import profile</text>
+  </g>
+
+  <!-- analyzer → group flows -->
+  <path d="M198 132 H306" class="flow"/>
+  <path d="M198 184 C250 184 250 235 306 235" class="flow"/>
+  <path d="M198 184 C250 184 250 127 306 127" class="flow"/>
+  <path d="M198 236 C250 236 250 289 306 289" class="flow"/>
+  <path d="M198 288 C250 288 250 343 306 343" class="flow"/>
+  <path d="M198 340 C250 340 250 397 306 397" class="flow"/>
+  <path d="M198 340 C250 340 250 181 306 181" class="flow" stroke-opacity=".25"/>
+
+  <!-- signature vector -->
+  <text x="700" y="100" class="lab">SIGNATURE VECTOR</text>
+  <rect x="690" y="104" width="360" height="316" rx="10" fill="#0b1226" stroke="url(#sig)" stroke-width="1.6"/>
+  <text x="710" y="140" class="h">concatenate · L2-normalize</text>
+  <!-- stacked colored bands -->
+  <g>
+    <rect x="712" y="156" width="316" height="34" rx="4" fill="#2bd99a" fill-opacity=".8"/>
+    <rect x="712" y="194" width="316" height="34" rx="4" fill="#49c7e8" fill-opacity=".8"/>
+    <rect x="712" y="232" width="316" height="22" rx="4" fill="#6fa8ff" fill-opacity=".8"/>
+    <rect x="712" y="258" width="316" height="18" rx="4" fill="#9f8bff" fill-opacity=".8"/>
+    <rect x="712" y="280" width="316" height="26" rx="4" fill="#c583ff" fill-opacity=".8"/>
+    <rect x="712" y="310" width="316" height="18" rx="4" fill="#e07be0" fill-opacity=".8"/>
+  </g>
+  <text x="710" y="356" class="cap">+ the raw canonical-block token set (Jaccard)</text>
+  <text x="710" y="378" class="cap">+ cfg &amp; plaintext fingerprints (exact match)</text>
+  <text x="710" y="404" class="cap" fill="#8fa8ff">affinity = cosine ⊕ Jaccard  →  the metric space</text>
+
+  <path d="M610 262 C650 262 650 262 686 262" class="flow"/>
+</svg>
