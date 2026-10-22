@@ -35,14 +35,17 @@ use std::collections::HashMap;
 use std::io;
 use std::time::Duration;
 
-pub fn run(store: Store) -> Result<()> {
-    let samples = store.list_samples()?;
-    // Verdicts from the active model, if one has been trained or imported.
-    let model = agat_engine::ImmuneModel::load(&store).ok();
+/// Recompute every sample's verdict against the currently stored model.
+/// Returns the verdicts and whether a model is present.
+fn compute_verdicts(
+    store: &Store,
+    samples: &[StoredSample],
+) -> (HashMap<SampleId, ScanResult>, bool) {
+    let model = agat_engine::ImmuneModel::load(store).ok();
     let mut verdicts: HashMap<SampleId, ScanResult> = HashMap::new();
     if let Some(model) = &model {
-        for s in &samples {
-            if let Ok(map) = agat_engine::feature_map(&store, &s.sample.id) {
+        for s in samples {
+            if let Ok(map) = agat_engine::feature_map(store, &s.sample.id) {
                 let name = s.sample.metadata.original_filename.clone();
                 if let Ok(r) = model.scan(&s.sample.id, name, &map) {
                     verdicts.insert(s.sample.id, r);
@@ -50,6 +53,12 @@ pub fn run(store: Store) -> Result<()> {
             }
         }
     }
+    (verdicts, model.is_some())
+}
+
+pub fn run(store: Store) -> Result<()> {
+    let samples = store.list_samples()?;
+    let (verdicts, has_model) = compute_verdicts(&store, &samples);
     let mut static_features: HashMap<SampleId, StaticFeatures> = HashMap::new();
     let mut disasm_features: HashMap<SampleId, DisasmFeatures> = HashMap::new();
     let mut poly_features: HashMap<SampleId, PolyFeatures> = HashMap::new();
@@ -82,7 +91,7 @@ pub fn run(store: Store) -> Result<()> {
             }
         }
     }
-    let mut app = App::new(samples, verdicts, model.is_some());
+    let mut app = App::new(samples, verdicts, has_model);
     app.static_features = static_features;
     app.disasm_features = disasm_features;
     app.poly_features = poly_features;
@@ -95,7 +104,7 @@ pub fn run(store: Store) -> Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let res = run_loop(&mut terminal, &mut app);
+    let res = run_loop(&mut terminal, &mut app, &store);
 
     disable_raw_mode()?;
     execute!(
@@ -168,6 +177,14 @@ struct App {
     show_help: bool,
     /// Live filter over the sample list; `None` unless search is active.
     filter: Option<String>,
+    /// Actions menu visible.
+    show_actions: bool,
+    /// Selected row in the actions menu.
+    action_cursor: usize,
+    /// Family-name input buffer; `Some` while typing for "mature".
+    mature_input: Option<String>,
+    /// Last action's result, shown in the footer.
+    status: Option<String>,
 }
 
 impl App {
@@ -196,7 +213,40 @@ impl App {
             content_scroll: 0,
             show_help: false,
             filter: None,
+            show_actions: false,
+            action_cursor: 0,
+            mature_input: None,
+            status: None,
         }
+    }
+
+    /// The actions a user can run from the menu.
+    const ACTIONS: [&'static str; 4] = [
+        "Build self-model (from benign samples)",
+        "Generate detector repertoire",
+        "Mature selected sample as a family…",
+        "Refresh verdicts",
+    ];
+
+    /// Run the action at `index` against `store`, refresh verdicts, and set
+    /// the status line. `family` is only used by the mature action.
+    fn run_action(&mut self, store: &Store, index: usize, family: Option<&str>) {
+        let result = match index {
+            0 => actions::build_self(store, &self.samples),
+            1 => actions::generate_repertoire_action(store),
+            2 => match (self.selected().map(|s| s.sample.id), family) {
+                (Some(id), Some(f)) => actions::mature_action(store, &id, f),
+                _ => Err(anyhow::anyhow!("select a sample to mature")),
+            },
+            _ => Ok("refreshed".to_string()),
+        };
+        self.status = Some(match result {
+            Ok(msg) => format!("✓ {msg}"),
+            Err(e) => format!("✗ {e}"),
+        });
+        let (verdicts, has_model) = compute_verdicts(store, &self.samples);
+        self.verdicts = verdicts;
+        self.has_model = has_model;
     }
 
     /// Indices into `samples` that match the active filter (all of them
@@ -322,7 +372,11 @@ impl App {
     }
 }
 
-fn run_loop<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> {
+fn run_loop<B: ratatui::backend::Backend>(
+    terminal: &mut Terminal<B>,
+    app: &mut App,
+    store: &Store,
+) -> Result<()> {
     loop {
         terminal.draw(|f| draw(f, app))?;
         if event::poll(Duration::from_millis(200))? {
@@ -358,6 +412,56 @@ fn run_loop<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: &mut 
                     }
                     continue;
                 }
+                // Family-name input for the mature action.
+                if let Some(buf) = app.mature_input.as_mut() {
+                    match key.code {
+                        KeyCode::Esc => app.mature_input = None,
+                        KeyCode::Enter => {
+                            let family = std::mem::take(buf);
+                            app.mature_input = None;
+                            if !family.trim().is_empty() {
+                                app.run_action(store, 2, Some(&family));
+                            }
+                        }
+                        KeyCode::Backspace => {
+                            buf.pop();
+                        }
+                        KeyCode::Char(c) => buf.push(c),
+                        _ => {}
+                    }
+                    continue;
+                }
+                // Actions menu navigation.
+                if app.show_actions {
+                    match key.code {
+                        KeyCode::Esc | KeyCode::Char('a') | KeyCode::Char('q') => {
+                            app.show_actions = false
+                        }
+                        KeyCode::Down | KeyCode::Char('j') => {
+                            app.action_cursor = (app.action_cursor + 1) % App::ACTIONS.len()
+                        }
+                        KeyCode::Up | KeyCode::Char('k') => {
+                            app.action_cursor =
+                                (app.action_cursor + App::ACTIONS.len() - 1) % App::ACTIONS.len()
+                        }
+                        KeyCode::Enter => {
+                            let idx = app.action_cursor;
+                            app.show_actions = false;
+                            if idx == 2 {
+                                // Mature needs a family name.
+                                if app.selected().is_some() {
+                                    app.mature_input = Some(String::new());
+                                } else {
+                                    app.status = Some("✗ select a sample to mature".into());
+                                }
+                            } else {
+                                app.run_action(store, idx, None);
+                            }
+                        }
+                        _ => {}
+                    }
+                    continue;
+                }
                 if app.show_help {
                     // Any key dismisses help.
                     app.show_help = false;
@@ -372,6 +476,10 @@ fn run_loop<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: &mut 
                         app.list_state.select(Some(0));
                     }
                     KeyCode::Char('?') => app.show_help = true,
+                    KeyCode::Char('a') => {
+                        app.show_actions = true;
+                        app.action_cursor = 0;
+                    }
                     KeyCode::PageDown | KeyCode::Char(' ') => {
                         app.content_scroll = app.content_scroll.saturating_add(10)
                     }
@@ -630,14 +738,24 @@ fn draw(f: &mut Frame, app: &App) {
             key("esc"),
             Span::raw(" cancel "),
         ]
+    } else if let Some(status) = &app.status {
+        let color = if status.starts_with('✓') {
+            Color::Green
+        } else {
+            Color::Red
+        };
+        vec![Span::styled(
+            format!(" {status} "),
+            Style::default().fg(color),
+        )]
     } else {
         vec![
             key("j/k"),
             Span::raw(" sample  "),
             key("h/l"),
             Span::raw(" tab  "),
-            key("PgUp/Dn"),
-            Span::raw(" scroll  "),
+            key("a"),
+            Span::raw(" actions  "),
             key("/"),
             Span::raw(" search  "),
             key("?"),
@@ -651,6 +769,92 @@ fn draw(f: &mut Frame, app: &App) {
     if app.show_help {
         draw_help(f);
     }
+    if app.show_actions {
+        draw_actions(f, app);
+    }
+    if let Some(buf) = &app.mature_input {
+        draw_input(f, "mature selected sample — family name:", buf);
+    }
+}
+
+/// The actions menu: a selectable list of operations.
+fn draw_actions(f: &mut Frame, app: &App) {
+    let area = f.area();
+    let w = 48u16.min(area.width.saturating_sub(4));
+    let h = (App::ACTIONS.len() as u16 + 4).min(area.height.saturating_sub(2));
+    let x = (area.width.saturating_sub(w)) / 2;
+    let y = (area.height.saturating_sub(h)) / 2;
+    let popup = ratatui::layout::Rect {
+        x,
+        y,
+        width: w,
+        height: h,
+    };
+    f.render_widget(ratatui::widgets::Clear, popup);
+    let mut lines = vec![Line::from("")];
+    for (i, label) in App::ACTIONS.iter().enumerate() {
+        if i == app.action_cursor {
+            lines.push(Line::from(Span::styled(
+                format!("  ▶ {label}"),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )));
+        } else {
+            lines.push(Line::from(format!("    {label}")));
+        }
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "  ↑/↓ select · ↵ run · esc close",
+        Style::default().fg(Color::DarkGray),
+    )));
+    f.render_widget(
+        Paragraph::new(lines).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Cyan))
+                .title(" actions "),
+        ),
+        popup,
+    );
+}
+
+/// A single-line text input popup (used by the mature action).
+fn draw_input(f: &mut Frame, prompt: &str, buf: &str) {
+    let area = f.area();
+    let w = (prompt.len() as u16 + 8).clamp(30, area.width.saturating_sub(4));
+    let h = 5u16;
+    let x = (area.width.saturating_sub(w)) / 2;
+    let y = (area.height.saturating_sub(h)) / 2;
+    let popup = ratatui::layout::Rect {
+        x,
+        y,
+        width: w,
+        height: h,
+    };
+    f.render_widget(ratatui::widgets::Clear, popup);
+    let lines = vec![
+        Line::from(Span::styled(
+            format!("  {prompt}"),
+            Style::default().fg(Color::Gray),
+        )),
+        Line::from(Span::styled(
+            format!("  {buf}▏"),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )),
+    ];
+    f.render_widget(
+        Paragraph::new(lines).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Cyan))
+                .title(" input "),
+        ),
+        popup,
+    );
 }
 
 /// Centered logo + hint shown when the sample library is empty.
@@ -741,6 +945,7 @@ fn draw_help(f: &mut Frame) {
         k("J / K", "scroll by one line"),
         k("g", "scroll to top"),
         k("/", "search samples (id / name)"),
+        k("a", "actions: train, mature, refresh"),
         k("?", "toggle this help"),
         k("q / Esc", "quit"),
         Line::from(""),
@@ -1729,6 +1934,24 @@ mod tests {
         app.clamp_selection();
         assert!(app.visible().is_empty());
         assert_eq!(app.list_state.selected(), None);
+    }
+
+    #[test]
+    fn actions_menu_renders_and_runs() {
+        let mut app = app_with(vec![], vec![sample(1, "x.bin")], false);
+        app.show_actions = true;
+        let screen = render(&app);
+        assert!(screen.contains("actions"), "{screen}");
+        assert!(screen.contains("Build self-model"), "{screen}");
+        assert!(screen.contains("Generate detector repertoire"), "{screen}");
+        // Running an action with no trained features sets an error status.
+        let store = agat_store::Store::open_in_memory().unwrap();
+        app.run_action(&store, 1, None); // generate repertoire with no self-model
+        assert!(
+            app.status.as_deref().unwrap().starts_with('✗'),
+            "{:?}",
+            app.status
+        );
     }
 
     #[test]
