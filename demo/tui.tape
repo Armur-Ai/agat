@@ -22,41 +22,51 @@ Show
 Type "agat tui"
 Sleep 400ms
 Enter
-Sleep 1.8s
+Sleep 1.6s
 
-# browse a few samples — severity colors update live
-Type "j"
-Sleep 600ms
-Type "j"
-Sleep 600ms
-Type "j"
+# browse — severity colors
+Type "jj"
+Sleep 700ms
+
+# mark the selected sample benign
+Type "b"
+Sleep 1.1s
+
+# open the actions menu — drive the immune pipeline from the UI
+Type "a"
+Sleep 1.3s
+
+# mature the selected sample into a new family
+Type "jj"
+Sleep 700ms
+Enter
+Sleep 800ms
+Type "trojan"
 Sleep 900ms
-
-# flip through the analyzer tabs
-Type "l"
-Sleep 1s
-Type "l"
-Sleep 1s
-Type "l"
-Sleep 1s
-Type "1"
-Sleep 900ms
-
-# search for the AI-rewritten sample
-Type "/"
-Sleep 500ms
-Type "ai"
-Sleep 1.2s
 Enter
 Sleep 1.4s
-Escape
-Sleep 600ms
 
-# help overlay
-Type "?"
-Sleep 2s
-Type " "
+# refresh verdicts
+Type "a"
+Sleep 700ms
+Type "jjj"
 Sleep 500ms
+Enter
+Sleep 1.1s
+
+# flip through analyzer tabs
+Type "l"
+Sleep 900ms
+Type "l"
+Sleep 900ms
+Type "1"
+Sleep 700ms
+
+# help
+Type "?"
+Sleep 1.8s
+Type " "
+Sleep 400ms
 
 Type "q"
 Sleep 400ms
