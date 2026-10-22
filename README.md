@@ -141,6 +141,16 @@ behavioral properties that survive the rewrites:
 | **Clonal selection** | CLONALG, de Castro & Von Zuben 2002 | clone ∝ affinity, hypermutate ∝ 1/affinity, promote the best to **memory cells** |
 | **Danger theory** | Dendritic Cell Algorithm, Greensmith & Aickelin 2005 | PAMP / danger / safe signal fusion into a context: `safe` · `ambiguous` · `dangerous` |
 
+Recognition answers *is this non-self?* The danger axis answers *is this
+actually harmful?* — because unknown is not the same as hostile. A dendritic
+cell accumulates PAMP, danger and safe signals, gates on whether there is
+enough context to speak at all, and tilts a single maturation ratio that safe
+signals can pull back toward benign:
+
+<p align="center">
+  <img src="docs/assets/danger.svg" alt="the danger axis: a dendritic cell fuses PAMP, danger and safe signals into a costimulation migration gate and a mature-versus-semimature ratio, which together decide whether the context is inconclusive, safe, ambiguous or dangerous" width="100%">
+</p>
+
 Under the immune core sits a full binary-analysis pipeline, written from scratch
 in Rust:
 
