@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="520" viewBox="0 0 1000 520" role="img" aria-label="as a threat mutates its surface, signature detection collapses while agat's behavioral recognition holds">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#03050b"/><stop offset="1" stop-color="#0c0a1d"/></linearGradient>
+    <pattern id="dots" width="26" height="26" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1" fill="#5ef2ff" fill-opacity="0.06"/></pattern>
+    <linearGradient id="agatfill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2bd99a" stop-opacity="0.22"/><stop offset="1" stop-color="#2bd99a" stop-opacity="0"/></linearGradient>
+    <style>
+      .t  { font:12px ui-monospace,Menlo,monospace; fill:#93a4cc; }
+      .h  { font:700 15px ui-monospace,Menlo,monospace; fill:#e8efff; }
+      .ax { font:11px ui-monospace,Menlo,monospace; fill:#8a9bc4; }
+      .lg { font:700 12px ui-monospace,Menlo,monospace; }
+    </style>
+  </defs>
+  <rect width="1000" height="520" fill="url(#bg)"/><rect width="1000" height="520" fill="url(#dots)"/>
+  <text x="500" y="44" text-anchor="middle" class="h">As the surface mutates, signatures collapse. Behavior holds.</text>
+  <text x="500" y="66" text-anchor="middle" class="t">illustrative — the measured numbers are in bench/README.md</text>
+
+  <!-- plot area: x 120..900, y 110..400 -->
+  <!-- axes -->
+  <line x1="120" y1="400" x2="920" y2="400" stroke="#3a4a6a" stroke-width="1.2"/>
+  <line x1="120" y1="110" x2="120" y2="400" stroke="#3a4a6a" stroke-width="1.2"/>
+  <text x="96" y="116" class="ax" text-anchor="end">100%</text>
+  <text x="96" y="261" class="ax" text-anchor="end">50%</text>
+  <text x="96" y="404" class="ax" text-anchor="end">0%</text>
+  <text x="70" y="255" class="ax" transform="rotate(-90 70 255)" text-anchor="middle">detection rate</text>
+
+  <!-- x labels: 4 stages at x = 220, 420, 620, 820 -->
+  <g class="ax" text-anchor="middle">
+    <text x="220" y="424">original</text>
+    <text x="420" y="424">polymorphic</text>
+    <text x="620" y="424">metamorphic</text>
+    <text x="820" y="424">AI-rewritten</text>
+  </g>
+  <text x="520" y="452" text-anchor="middle" class="ax">→ the same behavior, an increasingly different surface →</text>
+
+  <!-- agat area + line (stays high: 100,98,97,95) -->
+  <path d="M220 112 L420 118 L620 121 L820 125 L820 400 L220 400 Z" fill="url(#agatfill)"/>
+  <polyline points="220,112 420,118 620,121 820,125" fill="none" stroke="#2bd99a" stroke-width="2.6"/>
+  <g fill="#2bd99a"><circle cx="220" cy="112" r="5"/><circle cx="420" cy="118" r="5"/><circle cx="620" cy="121" r="5"/><circle cx="820" cy="125" r="5"/></g>
+
+  <!-- signature line (collapses: 100,35,8,1) -->
+  <polyline points="220,112 420,299 620,377 820,397" fill="none" stroke="#ff5c7a" stroke-width="2.6" stroke-dasharray="7 4"/>
+  <g fill="#ff5c7a"><circle cx="220" cy="112" r="5"/><circle cx="420" cy="299" r="5"/><circle cx="620" cy="377" r="5"/><circle cx="820" cy="397" r="5"/></g>
+
+  <!-- legend -->
+  <g>
+    <rect x="620" y="150" width="12" height="12" rx="2" fill="#2bd99a"/>
+    <text x="640" y="161" class="lg" fill="#2bd99a">agat — behavioral affinity</text>
+    <rect x="620" y="174" width="12" height="12" rx="2" fill="#ff5c7a"/>
+    <text x="640" y="185" class="lg" fill="#ff5c7a">signatures / hashes</text>
+  </g>
+</svg>

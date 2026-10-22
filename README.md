@@ -46,6 +46,10 @@ and the surface is now free to change. An attacker with a code model can mint
 a thousand behaviorally identical variants before lunch. Each one is "new" to a
 signature, and each one costs an analyst time.
 
+<p align="center">
+  <img src="docs/assets/coverage.svg" alt="as a threat mutates from original to polymorphic to metamorphic to AI-rewritten, signature detection collapses toward zero while agat's behavioral recognition stays near 100%" width="88%">
+</p>
+
 Your body has been fighting that exact problem for 500 million years.
 
 ## agat doesn't match. It *recognizes*.
