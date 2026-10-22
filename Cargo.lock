@@ -262,9 +262,11 @@ name = "agat-tui"
 version = "0.1.0"
 dependencies = [
  "agat-ai",
+ "agat-antigen",
  "agat-core",
  "agat-disasm",
  "agat-engine",
+ "agat-immune",
  "agat-meta",
  "agat-poly",
  "agat-static",

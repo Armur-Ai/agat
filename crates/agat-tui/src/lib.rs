@@ -1,9 +1,12 @@
 //! Ratatui shell for agat.
+
 //!
 //! Sample browser on the left, colored by each sample's verdict; tabbed
 //! views on the right: the immune verdict (recognition, danger, model),
 //! then each analyzer (overview, disassembly, polymorphic, metamorphic,
 //! AI signals). Read-only over the store, so it needs no vault password.
+
+mod actions;
 
 use agat_ai::AiFeatures;
 use agat_core::{SampleId, ScanResult, Severity};
