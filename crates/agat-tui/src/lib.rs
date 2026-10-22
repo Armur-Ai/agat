@@ -279,6 +279,18 @@ impl App {
         });
     }
 
+    /// A dim hint for an action: a prerequisite that isn't met, or "".
+    fn action_hint(&self, index: usize) -> &'static str {
+        let has_self = self.verdicts.values().next().is_some() || self.has_model;
+        let any_benign = self.samples.iter().any(App::is_benign);
+        match index {
+            0 if !any_benign => "none marked benign — press b first",
+            1 if !has_self => "needs a self-model first",
+            2 if self.selected().is_none() => "select a sample",
+            _ => "",
+        }
+    }
+
     /// Whether a sample is tagged benign.
     fn is_benign(s: &StoredSample) -> bool {
         s.sample.metadata.family.as_deref() == Some("benign")
@@ -852,7 +864,7 @@ fn draw(f: &mut Frame, app: &App) {
 /// The actions menu: a selectable list of operations.
 fn draw_actions(f: &mut Frame, app: &App) {
     let area = f.area();
-    let w = 48u16.min(area.width.saturating_sub(4));
+    let w = 72u16.min(area.width.saturating_sub(4));
     let h = (App::ACTIONS.len() as u16 + 4).min(area.height.saturating_sub(2));
     let x = (area.width.saturating_sub(w)) / 2;
     let y = (area.height.saturating_sub(h)) / 2;
@@ -865,15 +877,27 @@ fn draw_actions(f: &mut Frame, app: &App) {
     f.render_widget(ratatui::widgets::Clear, popup);
     let mut lines = vec![Line::from("")];
     for (i, label) in App::ACTIONS.iter().enumerate() {
-        if i == app.action_cursor {
-            lines.push(Line::from(Span::styled(
-                format!("  ▶ {label}"),
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            )));
+        let hint = app.action_hint(i);
+        let hint_span = if hint.is_empty() {
+            Span::raw("")
         } else {
-            lines.push(Line::from(format!("    {label}")));
+            Span::styled(format!("  — {hint}"), Style::default().fg(Color::DarkGray))
+        };
+        if i == app.action_cursor {
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!("  ▶ {label}"),
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                hint_span,
+            ]));
+        } else {
+            lines.push(Line::from(vec![
+                Span::raw(format!("    {label}")),
+                hint_span,
+            ]));
         }
     }
     lines.push(Line::from(""));
