@@ -249,6 +249,34 @@ impl App {
         self.has_model = has_model;
     }
 
+    /// Toggle the "benign" tag on the selected sample and persist it.
+    fn toggle_benign(&mut self, store: &Store) {
+        let Some(id) = self.selected().map(|s| s.sample.id) else {
+            return;
+        };
+        let Some(sample) = self.samples.iter_mut().find(|s| s.sample.id == id) else {
+            return;
+        };
+        let tags = &mut sample.sample.metadata.tags;
+        let msg = if let Some(i) = tags.iter().position(|t| t == "benign") {
+            tags.remove(i);
+            format!("{} unmarked benign", id.short())
+        } else {
+            tags.push("benign".into());
+            format!("{} marked benign", id.short())
+        };
+        self.status = Some(match store.set_metadata(&id, &sample.sample.metadata) {
+            Ok(()) => format!("✓ {msg}"),
+            Err(e) => format!("✗ {e}"),
+        });
+    }
+
+    /// Whether a sample is tagged benign.
+    fn is_benign(s: &StoredSample) -> bool {
+        s.sample.metadata.family.as_deref() == Some("benign")
+            || s.sample.metadata.tags.iter().any(|t| t == "benign")
+    }
+
     /// Indices into `samples` that match the active filter (all of them
     /// when no filter is set), newest-first order preserved.
     fn visible(&self) -> Vec<usize> {
@@ -480,6 +508,7 @@ fn run_loop<B: ratatui::backend::Backend>(
                         app.show_actions = true;
                         app.action_cursor = 0;
                     }
+                    KeyCode::Char('b') => app.toggle_benign(store),
                     KeyCode::PageDown | KeyCode::Char(' ') => {
                         app.content_scroll = app.content_scroll.saturating_add(10)
                     }
@@ -597,7 +626,8 @@ fn draw(f: &mut Frame, app: &App) {
                     None if app.static_features.contains_key(&s.sample.id) => ("○", Color::Gray),
                     None => ("○", Color::DarkGray),
                 };
-                ListItem::new(Line::from(vec![
+                let benign = App::is_benign(s);
+                let mut spans = vec![
                     Span::styled(marker, Style::default().fg(marker_color)),
                     Span::raw(" "),
                     Span::styled(s.sample.id.short(), Style::default().fg(Color::Yellow)),
@@ -610,15 +640,25 @@ fn draw(f: &mut Frame, app: &App) {
                                 .original_filename
                                 .as_deref()
                                 .unwrap_or("-");
-                            if name.chars().count() > 20 {
-                                format!("{}…", name.chars().take(19).collect::<String>())
+                            let max = if benign { 16 } else { 20 };
+                            if name.chars().count() > max {
+                                format!("{}…", name.chars().take(max - 1).collect::<String>())
                             } else {
                                 name.to_string()
                             }
                         },
                         Style::default().fg(Color::Gray),
                     ),
-                ]))
+                ];
+                if benign {
+                    spans.push(Span::styled(
+                        " benign",
+                        Style::default()
+                            .fg(Color::Green)
+                            .add_modifier(Modifier::DIM),
+                    ));
+                }
+                ListItem::new(Line::from(spans))
             })
             .collect()
     };
@@ -946,6 +986,7 @@ fn draw_help(f: &mut Frame) {
         k("g", "scroll to top"),
         k("/", "search samples (id / name)"),
         k("a", "actions: train, mature, refresh"),
+        k("b", "mark/unmark selected benign"),
         k("?", "toggle this help"),
         k("q / Esc", "quit"),
         Line::from(""),
@@ -1934,6 +1975,24 @@ mod tests {
         app.clamp_selection();
         assert!(app.visible().is_empty());
         assert_eq!(app.list_state.selected(), None);
+    }
+
+    #[test]
+    fn toggle_benign_marks_and_persists() {
+        let store = agat_store::Store::open_in_memory().unwrap();
+        let s = sample(1, "tool.bin");
+        store.insert_sample(&s.sample).unwrap();
+        let mut app = app_with(vec![], vec![s], false);
+        assert!(!App::is_benign(&app.samples[0]));
+        app.toggle_benign(&store);
+        assert!(App::is_benign(&app.samples[0]));
+        assert!(app.status.as_deref().unwrap().contains("marked benign"));
+        // Persisted to the store.
+        let got = store.get_sample(&app.samples[0].sample.id).unwrap().unwrap();
+        assert!(got.sample.metadata.tags.iter().any(|t| t == "benign"));
+        // Toggle off.
+        app.toggle_benign(&store);
+        assert!(!App::is_benign(&app.samples[0]));
     }
 
     #[test]
