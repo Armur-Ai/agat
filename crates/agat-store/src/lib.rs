@@ -126,6 +126,23 @@ impl Store {
         Ok(())
     }
 
+    /// Update only a sample's metadata (tags, family, …), preserving its
+    /// `ingested_at`. Used by the TUI to curate samples.
+    pub fn set_metadata(&self, id: &SampleId, metadata: &SampleMetadata) -> Result<()> {
+        let meta = serde_json::to_string(metadata)?;
+        let n = self
+            .conn
+            .execute(
+                "UPDATE samples SET metadata_json = ?2 WHERE id = ?1",
+                params![id.to_hex(), meta],
+            )
+            .map_err(db_err)?;
+        if n == 0 {
+            return Err(Error::Database(format!("no sample {}", id.short())));
+        }
+        Ok(())
+    }
+
     pub fn get_sample(&self, id: &SampleId) -> Result<Option<StoredSample>> {
         let row = self
             .conn
@@ -479,6 +496,22 @@ mod tests {
             .unwrap()
             .unwrap()
             .contains("cells"));
+    }
+
+    #[test]
+    fn set_metadata_updates_in_place() {
+        let store = Store::open_in_memory().unwrap();
+        let s = fixture_sample();
+        store.insert_sample(&s).unwrap();
+        let before = store.get_sample(&s.id).unwrap().unwrap().ingested_at;
+        let mut meta = s.metadata.clone();
+        meta.tags.push("benign".into());
+        store.set_metadata(&s.id, &meta).unwrap();
+        let got = store.get_sample(&s.id).unwrap().unwrap();
+        assert!(got.sample.metadata.tags.iter().any(|t| t == "benign"));
+        assert_eq!(got.ingested_at, before, "ingested_at must be preserved");
+        // Unknown id errors.
+        assert!(store.set_metadata(&SampleId([9u8; 32]), &meta).is_err());
     }
 
     #[test]
