@@ -274,8 +274,12 @@ Exit codes are the contract: **`0`** clean · **`2`** review/suspicious ·
 ### The analyst's chair (`agat tui`)
 
 <p align="center">
-  <img src="docs/assets/tui.gif" alt="agat's terminal verdict console: a severity-colored sample list, the recognition and danger axes, analyzer tabs, search, and a help overlay" width="92%">
+  <img src="docs/assets/train-tui.gif" alt="training agat entirely in the TUI: mark samples benign, build the self-model, generate the repertoire, and mature a family — then held-out variants light up MALICIOUS" width="92%">
 </p>
+
+*Training agat end to end — without typing a single command.* Mark benign
+samples, build the self-model, generate the repertoire, and teach a family,
+all from the Actions menu; the verdicts light up live.
 
 `agat tui` is an interactive **control surface**, not just a viewer. A
 severity-colored sample list, each verdict's recognition and danger axes with
