@@ -293,9 +293,16 @@ the other tabs drill into each analyzer.
 | `h` / `l`, `←` / `→`, `Tab` | switch tab |
 | `1`–`6` | jump to a tab |
 | `PgUp` / `PgDn`, `J` / `K`, `g` | scroll the view |
+| `b` | mark / unmark the selected sample benign |
+| `a` | actions menu: build self-model, generate repertoire, mature a family, refresh |
 | `/` | search samples by id or name |
 | `?` | toggle the help overlay |
 | `q` / `Esc` | quit |
+
+The actions menu makes the TUI a control surface: mark your benign samples
+with `b`, then `a` → *Build self-model* → *Generate repertoire*, and `a` →
+*Mature selected sample as a family…* to teach a family — training agat end
+to end without the shell. Every action refreshes the verdicts live.
 
 ---
 
