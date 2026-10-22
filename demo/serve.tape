@@ -10,6 +10,9 @@ Set Width 1200
 Set Height 640
 Set Padding 20
 Set Theme "Catppuccin Mocha"
+Set Margin 44
+Set MarginFill "#0a0b14"
+Set BorderRadius 14
 Set TypingSpeed 30ms
 Set WindowBar Colorful
 Set WindowBarSize 34
