@@ -183,6 +183,8 @@ struct App {
     action_cursor: usize,
     /// Family-name input buffer; `Some` while typing for "mature".
     mature_input: Option<String>,
+    /// File-path input buffer; `Some` while typing for "scan a file".
+    scan_input: Option<String>,
     /// Last action's result, shown in the footer.
     status: Option<String>,
 }
@@ -216,15 +218,17 @@ impl App {
             show_actions: false,
             action_cursor: 0,
             mature_input: None,
+            scan_input: None,
             status: None,
         }
     }
 
     /// The actions a user can run from the menu.
-    const ACTIONS: [&'static str; 4] = [
+    const ACTIONS: [&'static str; 5] = [
         "Build self-model (from benign samples)",
         "Generate detector repertoire",
         "Mature selected sample as a family…",
+        "Scan a file on disk…",
         "Refresh verdicts",
     ];
 
@@ -237,6 +241,10 @@ impl App {
             2 => match (self.selected().map(|s| s.sample.id), family) {
                 (Some(id), Some(f)) => actions::mature_action(store, &id, f),
                 _ => Err(anyhow::anyhow!("select a sample to mature")),
+            },
+            3 => match family {
+                Some(path) => actions::scan_file(store, path),
+                None => Err(anyhow::anyhow!("no path")),
             },
             _ => Ok("refreshed".to_string()),
         };
@@ -459,6 +467,25 @@ fn run_loop<B: ratatui::backend::Backend>(
                     }
                     continue;
                 }
+                // File-path input for the scan action.
+                if let Some(buf) = app.scan_input.as_mut() {
+                    match key.code {
+                        KeyCode::Esc => app.scan_input = None,
+                        KeyCode::Enter => {
+                            let path = std::mem::take(buf);
+                            app.scan_input = None;
+                            if !path.trim().is_empty() {
+                                app.run_action(store, 3, Some(&path));
+                            }
+                        }
+                        KeyCode::Backspace => {
+                            buf.pop();
+                        }
+                        KeyCode::Char(c) => buf.push(c),
+                        _ => {}
+                    }
+                    continue;
+                }
                 // Actions menu navigation.
                 if app.show_actions {
                     match key.code {
@@ -475,15 +502,17 @@ fn run_loop<B: ratatui::backend::Backend>(
                         KeyCode::Enter => {
                             let idx = app.action_cursor;
                             app.show_actions = false;
-                            if idx == 2 {
-                                // Mature needs a family name.
-                                if app.selected().is_some() {
-                                    app.mature_input = Some(String::new());
-                                } else {
-                                    app.status = Some("✗ select a sample to mature".into());
+                            match idx {
+                                2 => {
+                                    if app.selected().is_some() {
+                                        app.mature_input = Some(String::new());
+                                    } else {
+                                        app.status =
+                                            Some("✗ select a sample to mature".to_string());
+                                    }
                                 }
-                            } else {
-                                app.run_action(store, idx, None);
+                                3 => app.scan_input = Some(String::new()),
+                                other => app.run_action(store, other, None),
                             }
                         }
                         _ => {}
@@ -814,6 +843,9 @@ fn draw(f: &mut Frame, app: &App) {
     }
     if let Some(buf) = &app.mature_input {
         draw_input(f, "mature selected sample — family name:", buf);
+    }
+    if let Some(buf) = &app.scan_input {
+        draw_input(f, "scan a file — path:", buf);
     }
 }
 
@@ -1988,7 +2020,10 @@ mod tests {
         assert!(App::is_benign(&app.samples[0]));
         assert!(app.status.as_deref().unwrap().contains("marked benign"));
         // Persisted to the store.
-        let got = store.get_sample(&app.samples[0].sample.id).unwrap().unwrap();
+        let got = store
+            .get_sample(&app.samples[0].sample.id)
+            .unwrap()
+            .unwrap();
         assert!(got.sample.metadata.tags.iter().any(|t| t == "benign"));
         // Toggle off.
         app.toggle_benign(&store);

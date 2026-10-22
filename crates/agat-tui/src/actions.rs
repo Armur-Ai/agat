@@ -11,6 +11,38 @@ use agat_engine::{
 use agat_immune::{generate_repertoire, mature, ClonalConfig, NsaConfig, SelfModel};
 use agat_store::{Store, StoredSample};
 use anyhow::{bail, Context, Result};
+use std::path::Path;
+
+/// Stateless-scan a file on disk against the active model; return a
+/// one-line verdict summary. Nothing is ingested.
+pub fn scan_file(store: &Store, path: &str) -> Result<String> {
+    let path = path.trim();
+    if path.is_empty() {
+        bail!("no path given");
+    }
+    let bytes = std::fs::read(Path::new(path)).with_context(|| format!("reading {path}"))?;
+    if bytes.is_empty() {
+        bail!("{path} is empty");
+    }
+    let model = agat_engine::ImmuneModel::load(store).context("no model — train one first")?;
+    let name = Path::new(path)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .map(String::from);
+    let r = model.scan_bytes(&bytes, name)?;
+    let fam = r.recognition.family.as_deref().unwrap_or("-");
+    Ok(format!(
+        "{}: {} · family {} · affinity {:.2} · danger {}",
+        Path::new(path)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or(path),
+        r.verdict.severity.label(),
+        fam,
+        r.recognition.affinity,
+        r.danger.context,
+    ))
+}
 
 /// Build the self-model from the benign samples (family/tag "benign", or
 /// all analyzed samples if none are tagged). Returns a status message.
@@ -162,6 +194,21 @@ mod tests {
 
         // Guard rails.
         assert!(mature_action(&store, &samples[0].sample.id, "  ").is_err());
+    }
+
+    #[test]
+    fn scan_file_reports_a_verdict() {
+        let store = Store::open_in_memory().unwrap();
+        let samples = trained_samples(&store);
+        build_self(&store, &samples).unwrap();
+        generate_repertoire_action(&store).unwrap();
+        let dir = std::env::temp_dir();
+        let f = dir.join(format!("agat-scan-{}.bin", std::process::id()));
+        std::fs::write(&f, b"\x7fELF some bytes to analyze and scan").unwrap();
+        let msg = scan_file(&store, f.to_str().unwrap()).unwrap();
+        assert!(msg.contains("affinity"), "{msg}");
+        let _ = std::fs::remove_file(&f);
+        assert!(scan_file(&store, "/nonexistent/x").is_err());
     }
 
     #[test]
