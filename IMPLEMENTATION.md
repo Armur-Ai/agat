@@ -212,7 +212,7 @@ executable variants).
 - [x] `EvolveReport` (shared `agat-eval` format).
 
 **M4 — CLI + proof**
-- [ ] `agat evolve` command; colored progress; `--report`.
+- [x] `agat evolve` command; colored progress; `--report`.
 - [ ] Bench: on a held‑out variant set, one run raises recognition coverage ≥ X pts with **FP unchanged (0)**; deterministic across two runs with same seed.
 
 ### Tests & validation
