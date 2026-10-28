@@ -1,17 +1,18 @@
-# demo/showcase.tape — the 60-second cinematic showcase (MP4).
+# demo/showcase.tape — the cinematic showcase (MP4): what agat does TODAY,
+# then where it grows TOMORROW.
 #
-# Everything shown is REAL output from the trained demo model:
 #   cargo build --release -p agat-cli
-#   demo/run.sh                 # trains demo/.work/local/home
-#   demo/showcase-setup.sh      # builds the 19-file showcase corpus
-#   vhs demo/showcase.tape      # -> demo/.work/agat-showcase.mp4
+#   demo/run.sh                   # the trained SOC home
+#   demo/showcase-setup.sh        # the 19-file scan corpus
+#   demo/capabilities-setup.sh    # the un-matured germinal home + signing key
+#   vhs demo/showcase.tape        # -> demo/.work/agat-showcase.mp4
 #
-# Seven beats: logo splash -> an unseen metamorphic variant revealed as an
-# animated, staged immune scan (agat scan --theater) -> an AI-rewritten
-# variant lighting up on LLM-artifact danger signals -> a behavioral-
-# similarity chart proving two encodings share one behavior -> a folder of
-# unknowns swept into a severity-colored verdict table -> the interactive
-# TUI console -> a closing splash.
+# NOTE: beat 3 matures the germinal home, so re-run demo/capabilities-setup.sh
+# before every render to reset it to the un-matured "before" state.
+#
+# Everything under "TODAY" is real output from the trained model. The
+# "TOMORROW" beat is `agat roadmap` — the tool's own, clearly-labeled map of
+# shipped vs roadmap capabilities, never a staged demo of unbuilt features.
 
 Output demo/.work/agat-showcase.mp4
 
@@ -26,119 +27,163 @@ Set Theme "Catppuccin Mocha"
 Set Margin 46
 Set MarginFill "#0a0b14"
 Set BorderRadius 16
-Set TypingSpeed 24ms
+Set TypingSpeed 19ms
 Set WindowBar Colorful
 Set WindowBarSize 38
 Set Framerate 30
 
-# ---- hidden setup: enter the trained demo tree, colored prompt ----
+# ---- hidden base setup ----
 Hide
-Type "cd /Users/akhilsharma/Engineering/agat/demo/.work/local"
+Type "cd /Users/akhilsharma/Engineering/agat/demo/.work"
 Enter
-Type "export PATH=/Users/akhilsharma/Engineering/agat/target/release:$PATH"
-Enter
-Type "export AGAT_HOME=$PWD/home AGAT_VAULT_PASSWORD=agat-demo"
+Type "export PATH=/Users/akhilsharma/Engineering/agat/target/release:$PATH AGAT_VAULT_PASSWORD=agat-demo"
 Enter
 Type "unset NO_COLOR"
 Enter
 Type "export PS1='\[\e[1;36m\]agat\[\e[0m\] \[\e[2m\]❯\[\e[0m\] '"
 Enter
-Type "clear"
+Type "cd local && clear"
 Enter
-Sleep 500ms
+Sleep 400ms
 Show
 
-# ============ beat 1 · the logo (≈5s) ============
-Type "agat"
-Sleep 400ms
-Enter
-Sleep 4s
-Type "clear"
-Enter
-Sleep 250ms
-
-# ============ beat 2 · an unseen metamorphic variant, revealed live (≈9s) ============
-Type "# a metamorphic variant agat has never seen — watch it reason"
-Sleep 400ms
-Enter
-Type "agat scan showcase/mutant_v3.bin --theater"
-Sleep 300ms
-Enter
-Sleep 6.5s
-Type "clear"
-Enter
-Sleep 250ms
-
-# ============ beat 3 · an AI-rewritten variant (LLM artifacts) (≈9s) ============
-Type "# an AI-rewritten variant — the algorithm was swapped wholesale"
-Sleep 400ms
-Enter
-Type "agat scan showcase/ai_rewrite_1.bin --theater"
-Sleep 300ms
-Enter
-Sleep 6.5s
-Type "clear"
-Enter
-Sleep 250ms
-
-# ============ beat 4 · two encodings, one behavior (≈7s) ============
-Type "# two differently-encoded variants — the same behavior underneath?"
-Sleep 400ms
-Enter
-Type "agat diff $(agat list 2>/dev/null | awk '/fam_v1/{print $1}') $(agat list 2>/dev/null | awk '/fam_v5/{print $1}')"
-Sleep 300ms
-Enter
-Sleep 4.5s
-Type "clear"
-Enter
-Sleep 250ms
-
-# ============ beat 5 · a folder of unknowns, swept live (≈8s) ============
-Type "# now point it at a folder of unknown binaries"
-Sleep 400ms
-Enter
-Type "agat scan showcase --output table"
-Sleep 300ms
-Enter
-Sleep 6s
-Type "clear"
-Enter
-Sleep 250ms
-
-# ============ beat 6 · the analyst's console (≈16s) ============
-Type "# the analyst's console — drive it all from the keyboard"
-Sleep 400ms
-Enter
-Type "agat tui"
-Enter
-Sleep 2.2s
-Type "j"
-Sleep 800ms
-Type "j"
-Sleep 800ms
-Type "j"
-Sleep 1.1s
-Type "2"
-Sleep 1.3s
-Type "5"
-Sleep 1.3s
-Type "1"
-Sleep 900ms
-Type "a"
-Sleep 2.2s
-Escape
-Sleep 600ms
-Type "?"
-Sleep 2.2s
-Escape
-Sleep 500ms
-Type "q"
-Sleep 500ms
-
-# ============ beat 7 · close on the mark (≈4s) ============
-Type "clear"
-Enter
+# ============ beat 1 · the logo (≈4s) ============
 Type "agat"
 Sleep 400ms
 Enter
 Sleep 3.5s
+Type "clear"
+Enter
+Sleep 200ms
+
+# ============ beat 2 · TODAY: recognize the unseen (≈8s) ============
+Hide
+Type "export AGAT_HOME=$PWD/home"
+Enter
+Type "clear"
+Enter
+Show
+Type "# TODAY · recognize a variant it has never seen"
+Sleep 300ms
+Enter
+Type "agat scan showcase/mutant_v3.bin --theater"
+Sleep 250ms
+Enter
+Sleep 5.5s
+Type "clear"
+Enter
+Sleep 200ms
+
+# ============ beat 3 · TODAY: the germinal center (≈13s) ============
+Hide
+Type "cd ../germinal && export AGAT_HOME=$PWD/home"
+Enter
+Type "export V2=$(agat list | awk '/strain_v2/{print $1}') V4=$(agat list | awk '/strain_v4/{print $1}')"
+Enter
+Type "export V5=$(agat list | awk '/strain_v5/{print $1}') V6=$(agat list | awk '/strain_v6/{print $1}')"
+Enter
+Type "clear"
+Enter
+Show
+Type "# TODAY · agat learns from the attacks that beat it"
+Sleep 300ms
+Enter
+Type "agat scan variants --output table"
+Sleep 250ms
+Enter
+Sleep 2.2s
+Type "# teach it two variants — then watch held-out siblings fall"
+Sleep 300ms
+Enter
+Type "agat mature $V2 --family nightshade && agat mature $V4 --family nightshade"
+Sleep 250ms
+Enter
+Sleep 1.2s
+Type "agat scan variants --output table"
+Sleep 250ms
+Enter
+Sleep 2.4s
+Type "# one more round — coverage climbs to the whole family"
+Sleep 300ms
+Enter
+Type "agat mature $V5 --family nightshade && agat mature $V6 --family nightshade"
+Sleep 250ms
+Enter
+Sleep 1s
+Type "agat scan variants --output table"
+Sleep 250ms
+Enter
+Sleep 2.6s
+Type "clear"
+Enter
+Sleep 200ms
+
+# ============ beat 4 · TODAY: herd immunity (≈10s) ============
+Hide
+Type "cd ../local && export AGAT_HOME=$PWD/home && rm -rf airgap"
+Enter
+Type "clear"
+Enter
+Show
+Type "# TODAY · one node immunizes the air-gapped fleet"
+Sleep 300ms
+Enter
+Type "agat repertoire export soc.agatpack --name soc-threats --version 1 --sign keys/soc.key"
+Sleep 250ms
+Enter
+Sleep 2.2s
+Type "# carry only the signed pack across the gap — no samples, no telemetry"
+Sleep 300ms
+Enter
+Type "agat --home airgap repertoire import soc.agatpack --trust keys/soc.pub"
+Sleep 250ms
+Enter
+Sleep 2.4s
+Type "# the fresh node — which never trained — now catches it"
+Sleep 300ms
+Enter
+Type "agat --home airgap scan showcase/mutant_v3.bin --output table"
+Sleep 250ms
+Enter
+Sleep 2.6s
+Type "clear"
+Enter
+Sleep 200ms
+
+# ============ beat 5 · TOMORROW: the immune roadmap (≈6s) ============
+Type "# TOMORROW · where the immune system grows next"
+Sleep 300ms
+Enter
+Type "agat roadmap"
+Sleep 250ms
+Enter
+Sleep 4.5s
+Type "clear"
+Enter
+Sleep 200ms
+
+# ============ beat 6 · the analyst's console (≈9s) ============
+Type "# the analyst's console — drive it all from the keyboard"
+Sleep 300ms
+Enter
+Type "agat tui"
+Enter
+Sleep 2s
+Type "j"
+Sleep 700ms
+Type "j"
+Sleep 800ms
+Type "a"
+Sleep 2s
+Escape
+Sleep 500ms
+Type "q"
+Sleep 400ms
+
+# ============ beat 7 · close (≈4s) ============
+Type "clear"
+Enter
+Type "agat"
+Sleep 400ms
+Enter
+Sleep 3s
