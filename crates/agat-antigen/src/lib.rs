@@ -22,12 +22,14 @@
 
 pub mod affinity;
 pub mod antigen;
+pub mod mutate;
 pub mod opcode;
 
 pub use affinity::{
     affinity, cosine_similarity, distance, euclidean_distance, jaccard, AffinityConfig,
 };
 pub use antigen::{signature_labels, Antigen, AntigenConfig, AntigenInput, ANTIGEN_LAYOUT_VERSION};
+pub use mutate::{mutate, perturb_signature, variant_batch, MutationClass};
 pub use opcode::{classify, OPCODE_CLASSES, OPCODE_CLASS_COUNT};
 
 #[cfg(test)]
