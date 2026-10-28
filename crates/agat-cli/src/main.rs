@@ -170,6 +170,20 @@ enum Cmd {
         #[arg(long)]
         family: String,
     },
+    /// Self-play maturation (the germinal center): synthesize variants of the
+    /// learned families, absorb the ones that evade, and report the coverage
+    /// climb. Synthesis is in feature space only. [experimental · R2]
+    Evolve {
+        /// Generations of self-play to run.
+        #[arg(long, default_value_t = 5)]
+        generations: usize,
+        /// Variants synthesized per family, per generation.
+        #[arg(long, default_value_t = 16)]
+        population: usize,
+        /// Seed for reproducible synthesis (defaults to a fixed seed).
+        #[arg(long)]
+        seed: Option<u64>,
+    },
     /// Signing keys for model packs.
     Key {
         #[command(subcommand)]
@@ -504,6 +518,11 @@ fn main() -> Result<()> {
             }
         },
         Cmd::Mature { id, family } => immune::cmd_mature(id, family, &store),
+        Cmd::Evolve {
+            generations,
+            population,
+            seed,
+        } => immune::cmd_evolve(generations, population, seed, &store),
         Cmd::Recognize { id, out } => {
             let (format, fail_on) = out.resolve(&cfg);
             let severity = immune::cmd_recognize(id, format, cfg.policy()?, &store)?;

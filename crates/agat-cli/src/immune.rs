@@ -15,7 +15,7 @@ use agat_engine::{
     antigen_from_map, feature_map, load_memory, load_repertoire, load_self_model, ImmuneModel,
     ScanPolicy, SLOT,
 };
-use agat_immune::{generate_repertoire, mature, NsaConfig, SelfModel};
+use agat_immune::{evolve, generate_repertoire, mature, EvolveConfig, NsaConfig, SelfModel};
 use agat_store::Store;
 use anyhow::{bail, Result};
 
@@ -187,6 +187,89 @@ pub fn cmd_mature(input: String, family: String, store: &Store) -> Result<()> {
         m.family_cells,
         if m.family_cells == 1 { "" } else { "s" }
     );
+    Ok(())
+}
+
+/// `agat evolve` — one or more rounds of self-play affinity maturation (the
+/// germinal center, R2). Synthesizes variant antigens of the learned families
+/// (in feature space only — never bytes), absorbs the ones that evade the
+/// current model, and reports the coverage climb. Mutates the stored memory.
+pub fn cmd_evolve(
+    generations: usize,
+    population: usize,
+    seed: Option<u64>,
+    store: &Store,
+) -> Result<()> {
+    let repertoire = load_repertoire(store)?.ok_or_else(|| {
+        anyhow::anyhow!("no repertoire yet — run `agat self build` then `agat repertoire generate`")
+    })?;
+    let mut memory = load_memory(store)?;
+    if memory.is_empty() {
+        bail!("no families to evolve — teach at least one with `agat mature`");
+    }
+
+    // Each memory cell's center is a parent antigen for its family.
+    let seeds: Vec<(String, Antigen)> = memory
+        .cells
+        .iter()
+        .map(|c| {
+            (
+                c.family.clone(),
+                Antigen {
+                    signature: c.center.clone(),
+                    block_tokens: Default::default(),
+                    cfg_fingerprint: None,
+                    plaintext_fingerprint: None,
+                },
+            )
+        })
+        .collect();
+
+    let mut cfg = EvolveConfig {
+        generations: generations.max(1),
+        population: population.max(1),
+        ..Default::default()
+    };
+    if let Some(s) = seed {
+        cfg.seed = s;
+    }
+
+    let report = evolve(&mut memory, &repertoire, &seeds, &cfg);
+    store.put_memory(SLOT, &serde_json::to_string(&memory)?)?;
+    // Self-play changed the model: it is no longer an imported pack.
+    store.clear_pack_info(SLOT)?;
+
+    let st = Style::new(crate::style::use_color());
+    let ngen = report.generations.len();
+    println!(
+        "{} germinal center · {} seed famil{} · {} generation{}",
+        st.bold(&st.fg(palette::VIOLET, "self-play")),
+        seeds.len(),
+        if seeds.len() == 1 { "y" } else { "ies" },
+        ngen,
+        if ngen == 1 { "" } else { "s" },
+    );
+    for g in &report.generations {
+        let bar_len = (g.coverage.clamp(0.0, 1.0) * 24.0).round() as usize;
+        println!(
+            "  gen {:<2} {:>5.1}%  {}  {} caught · {} absorbed",
+            g.generation,
+            g.coverage * 100.0,
+            st.fg(palette::GREEN, &"█".repeat(bar_len)),
+            g.caught,
+            g.evaded,
+        );
+    }
+    if let Some((first, last)) = report.coverage_climb() {
+        println!(
+            "  {} coverage {:.1}% → {:.1}%  ·  memory cells {} → {}",
+            st.fg(palette::VIOLET, "→"),
+            first * 100.0,
+            last * 100.0,
+            report.cells_before,
+            report.cells_after,
+        );
+    }
     Ok(())
 }
 
