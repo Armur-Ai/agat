@@ -66,6 +66,17 @@ impl Detector {
         euclidean_distance(&self.center, sig)
     }
 
+    /// Stable content id (family + quantized center + radius). A detector's
+    /// geometry is its identity, so two identical detectors dedupe on merge
+    /// (R1 · herd immunity).
+    pub fn detector_id(&self) -> String {
+        crate::ident::hash_id(
+            self.family.as_deref().unwrap_or(""),
+            &self.center,
+            &[self.radius],
+        )
+    }
+
     /// Whether the antigen binds this detector (lies within the radius).
     pub fn matches(&self, sig: &[f64]) -> bool {
         self.distance(sig) <= self.radius
@@ -120,6 +131,24 @@ impl Repertoire {
         let matured = self.detectors.iter().filter(|d| d.family.is_some()).count();
         (self.detectors.len() - matured, matured)
     }
+
+    /// Merge another repertoire into this one (R1 · herd immunity). Detectors
+    /// are deduped by `detector_id` (keeping the wider radius on an exact
+    /// collision) and sorted, so the merge is commutative and idempotent.
+    pub fn union(&mut self, other: &Repertoire) {
+        if self.dim == 0 {
+            self.dim = other.dim;
+        }
+        for d in &other.detectors {
+            let id = d.detector_id();
+            match self.detectors.iter_mut().find(|x| x.detector_id() == id) {
+                Some(existing) if d.radius > existing.radius => *existing = d.clone(),
+                Some(_) => {}
+                None => self.detectors.push(d.clone()),
+            }
+        }
+        self.detectors.sort_by_cached_key(|d| d.detector_id());
+    }
 }
 
 #[cfg(test)]
@@ -146,5 +175,23 @@ mod tests {
         ));
         assert!(r.covers(&[1.1, 1.0]));
         assert!(!r.covers(&[0.0, 0.0]));
+    }
+
+    #[test]
+    fn union_dedupes_and_is_idempotent() {
+        let d1 = Detector::new(vec![0.1, 0.2], 0.3, DetectorOrigin::NegativeSelection);
+        let d2 = Detector::new(vec![0.8, 0.9], 0.3, DetectorOrigin::NegativeSelection);
+        let mut a = Repertoire::new(2);
+        a.detectors.push(d1.clone());
+        let mut b = Repertoire::new(2);
+        b.detectors.push(d1.clone()); // duplicate of d1
+        b.detectors.push(d2.clone());
+
+        a.union(&b);
+        assert_eq!(a.len(), 2, "the duplicate must collapse");
+        let before: Vec<_> = a.detectors.iter().map(|d| d.detector_id()).collect();
+        a.union(&b);
+        let after: Vec<_> = a.detectors.iter().map(|d| d.detector_id()).collect();
+        assert_eq!(before, after, "union must be idempotent");
     }
 }

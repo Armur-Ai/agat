@@ -24,6 +24,7 @@
 pub mod clonal;
 pub mod danger;
 pub mod detectors;
+pub(crate) mod ident;
 pub mod memory;
 pub mod negative_selection;
 pub mod recognition;

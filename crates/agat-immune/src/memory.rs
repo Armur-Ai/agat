@@ -93,6 +93,21 @@ impl MemoryCell {
         euclidean_distance(&self.center, sig) <= self.radius
     }
 
+    /// Stable content id (family + quantized center). Two nodes that matured
+    /// the "same" cell agree on this id, so antibody-pack merges (R1) are
+    /// deterministic and idempotent. The radius is deliberately excluded: a
+    /// grown cell is still the same cell, just more mature.
+    pub fn cell_id(&self) -> String {
+        crate::ident::hash_id(&self.family, &self.center, &[])
+    }
+
+    /// Whether `self` is the stronger of two cells sharing a `cell_id`:
+    /// more incorporated variants wins, then the wider covering radius.
+    fn stronger_than(&self, other: &MemoryCell) -> bool {
+        self.variants > other.variants
+            || (self.variants == other.variants && self.radius > other.radius)
+    }
+
     /// View this memory cell as a detector for the recognition pass.
     pub fn to_detector(&self) -> Detector {
         Detector {
@@ -135,6 +150,25 @@ impl MemoryPool {
     /// All memory cells as detectors, for merging into a recognition pass.
     pub fn detectors(&self) -> Vec<Detector> {
         self.cells.iter().map(|c| c.to_detector()).collect()
+    }
+
+    /// Merge another pool into this one (R1 · herd immunity). On a `cell_id`
+    /// collision the stronger cell is kept; new cells are added. Cells are
+    /// sorted by id afterwards, so the result is independent of merge order
+    /// (commutative) and merging the same pool twice is a no-op (idempotent).
+    pub fn union(&mut self, other: &MemoryPool) {
+        if self.dim == 0 {
+            self.dim = other.dim;
+        }
+        for cell in &other.cells {
+            let id = cell.cell_id();
+            match self.cells.iter_mut().find(|c| c.cell_id() == id) {
+                Some(existing) if cell.stronger_than(existing) => *existing = cell.clone(),
+                Some(_) => {}
+                None => self.cells.push(cell.clone()),
+            }
+        }
+        self.cells.sort_by_cached_key(|c| c.cell_id());
     }
 
     /// Index of the memory cell of `family` nearest to `point`, if any.
@@ -191,6 +225,47 @@ mod tests {
         cell.incorporate(&[0.6, 0.0], 0.05, 1.0);
         assert!(cell.members.is_empty());
         assert!(cell.matches(&[0.4, 0.0]) && cell.matches(&[0.6, 0.0]));
+    }
+
+    #[test]
+    fn union_is_commutative_and_idempotent() {
+        let mut a = MemoryPool::new(2);
+        a.cells
+            .push(MemoryCell::new("x".into(), vec![0.1, 0.1], 0.05, 1.0));
+        let mut b = MemoryPool::new(2);
+        b.cells
+            .push(MemoryCell::new("y".into(), vec![0.9, 0.9], 0.05, 1.0));
+
+        let mut ab = a.clone();
+        ab.union(&b);
+        let mut ba = b.clone();
+        ba.union(&a);
+        let ids = |p: &MemoryPool| p.cells.iter().map(|c| c.cell_id()).collect::<Vec<_>>();
+        assert_eq!(ids(&ab), ids(&ba), "union must be commutative");
+        assert_eq!(ab.cells.len(), 2);
+
+        // Idempotent: merging the same pool again changes nothing.
+        let before = ids(&ab);
+        ab.union(&b);
+        assert_eq!(ids(&ab), before, "union must be idempotent");
+    }
+
+    #[test]
+    fn union_keeps_the_stronger_cell_on_collision() {
+        // Same family + center ⇒ same cell_id, but more maturity.
+        let weak = MemoryCell::new("x".into(), vec![0.1, 0.1], 0.05, 1.0);
+        let mut strong = weak.clone();
+        strong.variants = 5;
+        strong.radius = weak.radius + 0.1;
+        assert_eq!(weak.cell_id(), strong.cell_id());
+
+        let mut pool = MemoryPool::new(2);
+        pool.cells.push(weak.clone());
+        let mut other = MemoryPool::new(2);
+        other.cells.push(strong.clone());
+        pool.union(&other);
+        assert_eq!(pool.cells.len(), 1, "collision must dedupe");
+        assert_eq!(pool.cells[0].variants, 5, "the stronger cell must win");
     }
 
     #[test]
