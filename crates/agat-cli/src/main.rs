@@ -4,6 +4,7 @@ mod banner;
 mod config;
 mod immune;
 mod packs;
+mod roadmap;
 mod serve;
 mod style;
 mod theater;
@@ -229,6 +230,11 @@ enum Cmd {
     ///
     /// e.g. `agat man > /usr/local/share/man/man1/agat.1`
     Man,
+    /// Print the immune roadmap: what ships today, and what is next.
+    ///
+    /// A clearly-labeled map of agat's immune capabilities — the mechanisms
+    /// in the build today, and the ones still on the roadmap.
+    Roadmap,
 }
 
 #[derive(Subcommand)]
@@ -393,6 +399,10 @@ fn main() -> Result<()> {
             clap_mangen::Man::new(cmd).render(&mut std::io::stdout())?;
             return Ok(());
         }
+        Cmd::Roadmap => {
+            print!("{}", roadmap::render(style::use_color()));
+            return Ok(());
+        }
         _ => {}
     }
     let cli_command = command;
@@ -535,7 +545,7 @@ fn main() -> Result<()> {
             drop(store);
             serve::run(model, listen, allow_remote, max_bytes)
         }
-        Cmd::Completions { .. } | Cmd::Man | Cmd::Schema => {
+        Cmd::Completions { .. } | Cmd::Man | Cmd::Schema | Cmd::Roadmap => {
             unreachable!("handled before opening the store")
         }
         Cmd::Tui => agat_tui::run(store).context("running tui"),
