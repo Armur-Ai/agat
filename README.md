@@ -409,7 +409,17 @@ Defenders deserve exact limits, so here they are:
 - [ ] Coverage: ARM64 decryptor-loop detection, instruction reordering, keystream ciphers
 - [ ] `agat-rewriter`: ethically-scoped fixture generator for AI-rewrite research
 
-Full plan: [`docs/PRODUCT_ROADMAP.md`](docs/PRODUCT_ROADMAP.md).
+**The adaptive immune system (next horizon — [`ROADMAP.md`](ROADMAP.md)):**
+
+- [ ] **R1 · Herd immunity** — delta antibody packs that merge across an air-gapped fleet
+- [ ] **R2 · Germinal center** — self-play: synthesize variants, mature overnight, unattended
+- [ ] **R3 · Vaccine forecaster** — immunize against strains before they are written
+- [ ] **R4 · Living self** — continuous re-tolerization + a regulatory layer against false positives
+- [ ] **R5 · Adaptive inflammation** — cross-analyzer danger signaling, sharper where it is probed
+
+Forward roadmap & phases: [`ROADMAP.md`](ROADMAP.md) · granular build plans &
+tasks: [`IMPLEMENTATION.md`](IMPLEMENTATION.md) · productization history:
+[`docs/PRODUCT_ROADMAP.md`](docs/PRODUCT_ROADMAP.md).
 
 ## 🏗️ Architecture
 
