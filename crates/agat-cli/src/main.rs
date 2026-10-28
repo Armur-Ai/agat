@@ -6,6 +6,7 @@ mod immune;
 mod packs;
 mod serve;
 mod style;
+mod theater;
 
 use agat_ai::AiFeatures;
 use agat_core::{AnalysisContext, Sample, SampleId, SampleKind, SampleMetadata, ScanResult, Vault};
@@ -100,6 +101,11 @@ enum Cmd {
         /// scans only; `--ingest` runs sequentially.
         #[arg(long, short = 'j')]
         jobs: Option<usize>,
+        /// Reveal a single scan as an animated, staged analysis (for demos
+        /// and presentations). The verdict is unchanged; piped and
+        /// `--output json/sarif/table` runs ignore it.
+        #[arg(long)]
+        theater: bool,
         #[command(flatten)]
         out: OutputArgs,
     },
@@ -501,13 +507,22 @@ fn main() -> Result<()> {
             paths,
             ingest: _,
             jobs,
+            theater,
             out,
         } => {
             let (format, fail_on) = out.resolve(&cfg);
             let jobs = jobs
                 .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get()))
                 .max(1);
-            let worst = cmd_scan(&paths, format, cfg.policy()?, jobs, vault.as_ref(), &store)?;
+            let worst = cmd_scan(
+                &paths,
+                format,
+                cfg.policy()?,
+                jobs,
+                theater,
+                vault.as_ref(),
+                &store,
+            )?;
             drop(store);
             std::process::exit(fail_on.exit_code(worst));
         }
@@ -636,11 +651,13 @@ fn collect_files(path: &std::path::Path) -> Result<Vec<PathBuf>> {
 /// With `vault` = `None` the scan is stateless: each file is analyzed in
 /// memory and nothing is written. With a vault (`--ingest`), each file is
 /// also added to the sample library and its features persisted.
+#[allow(clippy::too_many_arguments)]
 fn cmd_scan(
     paths: &[PathBuf],
     format: immune::OutputFormat,
     policy: agat_engine::ScanPolicy,
     jobs: usize,
+    theater: bool,
     vault: Option<&Vault>,
     store: &Store,
 ) -> Result<agat_core::Severity> {
@@ -663,7 +680,11 @@ fn cmd_scan(
         }
         let model = agat_engine::ImmuneModel::load(store)?.with_policy(policy);
         let result = model.scan_bytes(&bytes, Some("<stdin>".into()))?;
-        render_scan(std::slice::from_ref(&result), true, format);
+        if theater && format == immune::OutputFormat::Text {
+            theater::play(&result, style::use_color());
+        } else {
+            render_scan(std::slice::from_ref(&result), true, format);
+        }
         return Ok(result.severity());
     }
 
@@ -734,6 +755,13 @@ fn cmd_scan(
             out?
         }
     };
+    // Theater mode animates a single scan; it is ignored for batches and
+    // for machine formats (json/sarif/table), which stay byte-stable.
+    if theater && single && format == immune::OutputFormat::Text {
+        theater::play(&results[0], style::use_color());
+        return Ok(results[0].severity());
+    }
+
     // The table prints its own tally; elsewhere note batch size on stderr.
     if !single && format != immune::OutputFormat::Table {
         eprintln!("scanned {} file(s)", results.len());
