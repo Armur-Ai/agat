@@ -6,10 +6,12 @@
 #   demo/showcase-setup.sh      # builds the 19-file showcase corpus
 #   vhs demo/showcase.tape      # -> demo/.work/agat-showcase.mp4
 #
-# Six beats: logo splash -> an unseen metamorphic variant (full immune
-# report) -> an AI-rewritten variant + a behavioral-similarity chart ->
-# a folder of unknowns with a live progress sweep and a colored verdict
-# table -> the interactive TUI console -> a closing splash.
+# Seven beats: logo splash -> an unseen metamorphic variant revealed as an
+# animated, staged immune scan (agat scan --theater) -> an AI-rewritten
+# variant lighting up on LLM-artifact danger signals -> a behavioral-
+# similarity chart proving two encodings share one behavior -> a folder of
+# unknowns swept into a severity-colored verdict table -> the interactive
+# TUI console -> a closing splash.
 
 Output demo/.work/agat-showcase.mp4
 
@@ -24,10 +26,10 @@ Set Theme "Catppuccin Mocha"
 Set Margin 46
 Set MarginFill "#0a0b14"
 Set BorderRadius 16
-Set TypingSpeed 26ms
+Set TypingSpeed 24ms
 Set WindowBar Colorful
 Set WindowBarSize 38
-Set Framerate 24
+Set Framerate 30
 
 # ---- hidden setup: enter the trained demo tree, colored prompt ----
 Hide
@@ -46,93 +48,94 @@ Enter
 Sleep 500ms
 Show
 
-# ============ beat 1 · the logo (≈6s) ============
+# ============ beat 1 · the logo (≈5s) ============
 Type "agat"
 Sleep 400ms
 Enter
-Sleep 4.5s
+Sleep 4s
 Type "clear"
 Enter
 Sleep 250ms
 
-# ============ beat 2 · an unseen metamorphic variant (≈9s) ============
-Type "# a metamorphic variant agat has never seen — no hash, no signature"
-Sleep 500ms
+# ============ beat 2 · an unseen metamorphic variant, revealed live (≈9s) ============
+Type "# a metamorphic variant agat has never seen — watch it reason"
+Sleep 400ms
 Enter
-Type "agat scan showcase/mutant_v3.bin"
-Sleep 350ms
+Type "agat scan showcase/mutant_v3.bin --theater"
+Sleep 300ms
 Enter
-Sleep 7s
+Sleep 6.5s
 Type "clear"
 Enter
 Sleep 250ms
 
-# ============ beat 3 · AI-rewrite + behavioral chart (≈12s) ============
+# ============ beat 3 · an AI-rewritten variant (LLM artifacts) (≈9s) ============
 Type "# an AI-rewritten variant — the algorithm was swapped wholesale"
-Sleep 500ms
+Sleep 400ms
 Enter
-Type "agat scan showcase/ai_rewrite_1.bin"
-Sleep 350ms
+Type "agat scan showcase/ai_rewrite_1.bin --theater"
+Sleep 300ms
 Enter
-Sleep 4.5s
-Type "# two differently-encoded variants — the same behavior underneath?"
-Sleep 500ms
-Enter
-Type "agat diff $(agat list | awk '/fam_v1/{print $1}') $(agat list | awk '/fam_v5/{print $1}')"
-Sleep 350ms
-Enter
-Sleep 5s
+Sleep 6.5s
 Type "clear"
 Enter
 Sleep 250ms
 
-# ============ beat 4 · a folder of unknowns, live (≈8s) ============
-Type "# point it at a folder of unknown binaries"
-Sleep 500ms
+# ============ beat 4 · two encodings, one behavior (≈7s) ============
+Type "# two differently-encoded variants — the same behavior underneath?"
+Sleep 400ms
+Enter
+Type "agat diff $(agat list 2>/dev/null | awk '/fam_v1/{print $1}') $(agat list 2>/dev/null | awk '/fam_v5/{print $1}')"
+Sleep 300ms
+Enter
+Sleep 4.5s
+Type "clear"
+Enter
+Sleep 250ms
+
+# ============ beat 5 · a folder of unknowns, swept live (≈8s) ============
+Type "# now point it at a folder of unknown binaries"
+Sleep 400ms
 Enter
 Type "agat scan showcase --output table"
-Sleep 350ms
+Sleep 300ms
 Enter
 Sleep 6s
 Type "clear"
 Enter
 Sleep 250ms
 
-# ============ beat 5 · the analyst's console (≈17s) ============
+# ============ beat 6 · the analyst's console (≈16s) ============
 Type "# the analyst's console — drive it all from the keyboard"
-Sleep 500ms
+Sleep 400ms
 Enter
 Type "agat tui"
 Enter
 Sleep 2.2s
-# walk the fleet; the list recolors by severity, meters update
 Type "j"
-Sleep 900ms
+Sleep 800ms
 Type "j"
-Sleep 900ms
+Sleep 800ms
 Type "j"
-Sleep 1.2s
-# flip through the analysis tabs (meters, antigen, danger fusion)
+Sleep 1.1s
 Type "2"
-Sleep 1.4s
+Sleep 1.3s
 Type "5"
-Sleep 1.4s
+Sleep 1.3s
 Type "1"
-Sleep 1s
-# the built-in action menu — no shell required
+Sleep 900ms
 Type "a"
 Sleep 2.2s
 Escape
-Sleep 700ms
-# the help overlay
+Sleep 600ms
 Type "?"
 Sleep 2.2s
 Escape
-Sleep 600ms
+Sleep 500ms
 Type "q"
 Sleep 500ms
 
-# ============ beat 6 · close on the mark (≈4s) ============
+# ============ beat 7 · close on the mark (≈4s) ============
 Type "clear"
 Enter
 Type "agat"
