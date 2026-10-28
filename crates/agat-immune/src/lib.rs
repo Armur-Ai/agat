@@ -26,6 +26,7 @@ pub mod danger;
 pub mod detectors;
 pub mod drift;
 pub mod evolve;
+pub mod forecast;
 pub(crate) mod ident;
 pub mod inflammation;
 pub mod memory;
@@ -42,6 +43,7 @@ pub use danger::{
 pub use detectors::{Detector, DetectorOrigin, Repertoire};
 pub use drift::{classify as classify_drift, DriftConfig, DriftVerdict};
 pub use evolve::{evolve, EvolveConfig, EvolveReport, GenerationReport};
+pub use forecast::{forecast, DriftModel, ForecastConfig, ForecastReport, LinearDriftModel};
 pub use inflammation::{neighborhood_key, Cytokines, InflamConfig};
 pub use memory::{MemoryCell, MemoryPool};
 pub use negative_selection::{generate as generate_repertoire, NsaConfig};
