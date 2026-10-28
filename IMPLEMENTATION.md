@@ -27,8 +27,29 @@ at the **current** tree.
 - [ ] **Corpus harness**: extend `bench/` with a time‑split, labeled,
   diversity‑scored synthetic corpus built from `tools/*_gen.py`; a
   `bench/holdout.sh` that reports coverage + FP for a given model.
-- [ ] **Antigen‑space mutation library** `agat-antigen::mutate` (used by R2 and
-  R3): perturb an `Antigen.signature` / block tokens within validated bounds.
+- [x] **Antigen‑space mutation library** `agat-antigen::mutate` — four
+  `MutationClass` axes, fingerprint-invariant per class, deterministic, bounded.
+
+## Landed so far (library layer)
+
+The library core of **all five phases** is implemented, tested and
+deterministic; CLI/`serve`/store wiring and the eval harness are the main
+remaining work. What exists today:
+
+| Phase | Implemented | Module / symbols |
+|---|---|---|
+| shared | mutation operators | `agat_antigen::mutate` (`MutationClass`, `mutate`, `variant_batch`) |
+| R1 | content ids + union merge | `MemoryCell::cell_id`, `Detector::detector_id`, `MemoryPool::union`, `Repertoire::union`, `crate::ident` |
+| R2 | self-play loop | `agat_immune::evolve` (`EvolveConfig`, `evolve`, `EvolveReport`) |
+| R3 | forward projection + pre-immunize | `agat_immune::forecast` (`DriftModel`, `LinearDriftModel`, `forecast`) |
+| R4 | living self + regulation + drift | `SelfModel::incorporate`, `agat_immune::regulation` (`Regulator`), `agat_immune::drift` (`classify`) |
+| R5 | bounded inflammation | `agat_immune::inflammation` (`Cytokines`, `InflamConfig`, `neighborhood_key`) |
+
+Still open per phase: pack delta/ledger + CLI (R1), diversity pressure + CLI
+(R2), corpus-fit drift model + time-split eval + CLI (R3), re-censor pass +
+serve hook + replay eval (R4), `danger::assess` modulation wiring + quarantine
+tier + `serve --adaptive` (R5), and the shared eval harness. The per-milestone
+checklists below mark what is done with `[x]`.
 
 ---
 
@@ -182,13 +203,13 @@ executable variants).
 - [ ] Guardrail test: `mutate` never emits parseable/executable bytes — it stays in feature space.
 
 **M2 — evolve loop**
-- [ ] `EvolveConfig` + `evolve()` single‑generation, fully seeded.
-- [ ] Evader detection using `Repertoire::covers` + memory match.
+- [x] `EvolveConfig` + `evolve()` single‑generation, fully seeded.
+- [x] Evader detection using `Repertoire::covers` + memory match.
 - [ ] Promotion path (mature + targeted `generate`) with no benign‑FP regression check per generation.
 
 **M3 — diversity & termination**
 - [ ] Fingerprint‑dedup diversity pressure; coverage/budget termination.
-- [ ] `EvolveReport` (shared `agat-eval` format).
+- [x] `EvolveReport` (shared `agat-eval` format).
 
 **M4 — CLI + proof**
 - [ ] `agat evolve` command; colored progress; `--report`.
@@ -248,11 +269,11 @@ trajectories, pre‑matured into memory.
 ### Tasks
 **M1 — drift model**
 - [ ] Estimate per‑group drift step distributions from the corpus; serialize a `DriftModel` config (deterministic, inspectable).
-- [ ] `Trajectory` synthesis reusing `agat-antigen::mutate` with a **direction**.
+- [x] `Trajectory` synthesis reusing `agat-antigen::mutate` with a **direction**.
 
 **M2 — forecast + pre‑immunize**
 - [ ] `forecast()` pre‑maturing along trajectories; cap in‑family drift so projected cells don't swallow non‑self.
-- [ ] `ForecastReport` (horizon, strains, projected coverage).
+- [x] `ForecastReport` (horizon, strains, projected coverage).
 
 **M3 — CLI + proof ⚠️(no overclaim)**
 - [ ] `agat forecast` + `--explain`.
@@ -320,7 +341,7 @@ malicious change.
 - [ ] `SelfModel::incorporate` + re‑censor pass; determinism + "self breathes" test (radius tracks a moving benign cluster).
 
 **M2 — regulation (Tregs)**
-- [ ] `DetectorId`; `Regulator` with FP‑pressure accounting + `sweep`.
+- [x] `DetectorId`; `Regulator` with FP‑pressure accounting + `sweep`.
 - [ ] Injected‑autoreactive‑detector test: regulator retires it before it fires on the benign corpus ⚠️.
 
 **M3 — drift classification**
@@ -391,7 +412,7 @@ state for the neighborhood model.
 
 ### Tasks
 **M1 — stateless‑safe core ⚠️(determinism)**
-- [ ] `Cytokines` + `InflamConfig` with hard bounds; `modulate` clamped; property test: modulation never exceeds `max_gain`, never below baseline.
+- [x] `Cytokines` + `InflamConfig` with hard bounds; `modulate` clamped; property test: modulation never exceeds `max_gain`, never below baseline.
 - [ ] Make it **opt‑in**: default path is byte‑identical to today (protect the air‑gap transcript).
 
 **M2 — integration**
@@ -400,7 +421,7 @@ state for the neighborhood model.
 
 **M3 — safety proofs ⚠️**
 - [ ] Probe‑campaign sim: local sensitivity rises in the probed neighborhood, later probes caught, then self‑limits to baseline (decay test).
-- [ ] **Adversarial DoS test**: a deliberate attempt to induce a global FP storm is provably bounded by `global_cap`/`rate_limit` (the key safety result).
+- [x] **Adversarial DoS test**: a deliberate attempt to induce a global FP storm is provably bounded by `global_cap`/`rate_limit` (the key safety result).
 
 **M4 — serve/metrics**
 - [ ] `serve --adaptive`, `/healthz` reports bounds; neighborhood heat metric.

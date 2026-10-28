@@ -15,10 +15,14 @@
 > system does.
 
 This roadmap covers the five immune capabilities beyond today's engine. They
-are **not shipped** — each phase below is a design direction with a concrete
-build plan in **[`IMPLEMENTATION.md`](IMPLEMENTATION.md)**. The shipping
-`agat` binary today does detection, training, signed packs, `serve`, and the
-TUI; none of the phases here exist yet in code.
+are **not shipped as product features** — each phase below is a design
+direction with a concrete build plan in
+**[`IMPLEMENTATION.md`](IMPLEMENTATION.md)**. The shipping `agat` binary today
+does detection, training, signed packs, `serve`, and the TUI. The **library
+core of all five phases has now landed** in `agat-immune` / `agat-antigen`
+(tested and deterministic — see the "Landed so far" table in
+`IMPLEMENTATION.md`); what remains for each is the CLI/`serve`/store wiring,
+the evaluation harness, and the research depth called out per phase.
 
 **Status legend:** 🟢 shippable soon (foundation exists) · 🟡 buildable (clear
 path) · 🔵 research (open problems) · 🟣 frontier (vision; needs the layers
