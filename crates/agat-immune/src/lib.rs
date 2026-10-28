@@ -24,6 +24,7 @@
 pub mod clonal;
 pub mod danger;
 pub mod detectors;
+pub mod evolve;
 pub(crate) mod ident;
 pub mod memory;
 pub mod negative_selection;
@@ -36,6 +37,7 @@ pub use danger::{
     DangerSignals, SignalClass,
 };
 pub use detectors::{Detector, DetectorOrigin, Repertoire};
+pub use evolve::{evolve, EvolveConfig, EvolveReport, GenerationReport};
 pub use memory::{MemoryCell, MemoryPool};
 pub use negative_selection::{generate as generate_repertoire, NsaConfig};
 pub use recognition::{recognize, DetectorMatch, Recognition};
