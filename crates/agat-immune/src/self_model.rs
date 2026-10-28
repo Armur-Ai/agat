@@ -102,6 +102,49 @@ impl SelfModel {
         }
     }
 
+    /// Fold new benign antigens into the model (R4 · living self): the benign
+    /// region *breathes* with the environment instead of going stale. Each new
+    /// point gets its k-th-nearest-neighbor radius against the combined set;
+    /// existing points keep theirs; `mean_radius` is recomputed. Deterministic.
+    pub fn incorporate<S: AsRef<str>>(&mut self, antigens: &[(S, &Antigen)]) {
+        if antigens.is_empty() {
+            return;
+        }
+        if self.dim == 0 {
+            self.dim = antigens[0].1.signature.len();
+        }
+        let existing: Vec<Vec<f64>> = self.points.iter().map(|p| p.signature.clone()).collect();
+        let incoming: Vec<Vec<f64>> = antigens.iter().map(|(_, a)| a.signature.clone()).collect();
+        let all: Vec<&[f64]> = existing
+            .iter()
+            .map(|s| s.as_slice())
+            .chain(incoming.iter().map(|s| s.as_slice()))
+            .collect();
+        for (id, a) in antigens {
+            let mut dists: Vec<f64> = all
+                .iter()
+                .map(|s| euclidean_distance(&a.signature, s))
+                .filter(|d| *d > 0.0)
+                .collect();
+            dists.sort_by(|x, y| x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal));
+            let radius = if dists.is_empty() {
+                0.0
+            } else {
+                dists[(self.k - 1).min(dists.len() - 1)]
+            };
+            self.points.push(SelfPoint {
+                signature: a.signature.clone(),
+                radius,
+                sample: Some(id.as_ref().to_string()),
+            });
+        }
+        self.mean_radius = if self.points.is_empty() {
+            0.0
+        } else {
+            self.points.iter().map(|p| p.radius).sum::<f64>() / self.points.len() as f64
+        };
+    }
+
     pub fn is_empty(&self) -> bool {
         self.points.is_empty()
     }
@@ -203,6 +246,25 @@ mod tests {
         assert!(!model.is_self(&probe, 0.0));
         // ...inside once tolerance is generous enough.
         assert!(model.is_self(&probe, 0.5));
+    }
+
+    #[test]
+    fn incorporate_grows_the_self_region() {
+        let benign = [ag(&[0.1, 0.2]), ag(&[0.2, 0.1]), ag(&[0.15, 0.15])];
+        let labelled: Vec<(String, &Antigen)> = benign
+            .iter()
+            .enumerate()
+            .map(|(i, a)| (i.to_string(), a))
+            .collect();
+        let mut model = SelfModel::build(&labelled, 1);
+        let before = model.points.len();
+
+        // A new benign build drifts in nearby.
+        let newer = ag(&[0.18, 0.18]);
+        model.incorporate(&[("newbuild", &newer)]);
+        assert_eq!(model.points.len(), before + 1, "self must grow");
+        // The new point is now recognized as self under a modest tolerance.
+        assert!(model.is_self(&[0.18, 0.18], model.mean_radius));
     }
 
     #[test]

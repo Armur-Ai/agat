@@ -24,11 +24,13 @@
 pub mod clonal;
 pub mod danger;
 pub mod detectors;
+pub mod drift;
 pub mod evolve;
 pub(crate) mod ident;
 pub mod memory;
 pub mod negative_selection;
 pub mod recognition;
+pub mod regulation;
 pub mod self_model;
 
 pub use clonal::{mature, ClonalConfig, Maturation};
@@ -37,8 +39,10 @@ pub use danger::{
     DangerSignals, SignalClass,
 };
 pub use detectors::{Detector, DetectorOrigin, Repertoire};
+pub use drift::{classify as classify_drift, DriftConfig, DriftVerdict};
 pub use evolve::{evolve, EvolveConfig, EvolveReport, GenerationReport};
 pub use memory::{MemoryCell, MemoryPool};
 pub use negative_selection::{generate as generate_repertoire, NsaConfig};
 pub use recognition::{recognize, DetectorMatch, Recognition};
+pub use regulation::{RegConfig, Regulator};
 pub use self_model::{SelfModel, SelfPoint};
