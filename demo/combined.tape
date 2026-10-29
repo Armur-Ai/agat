@@ -13,18 +13,18 @@ Output demo/.work/agat-combined.mp4
 Require bash
 Set Shell "bash"
 Set FontFamily "JetBrains Mono, Menlo, monospace"
-Set FontSize 16
-Set Width 1200
-Set Height 760
-Set Padding 24
+Set FontSize 24
+Set Width 1800
+Set Height 1140
+Set Padding 36
 Set Theme "Catppuccin Mocha"
-Set Margin 46
+Set Margin 69
 Set MarginFill "#0a0b14"
-Set BorderRadius 16
+Set BorderRadius 24
 Set TypingSpeed 20ms
 Set WindowBar Colorful
-Set WindowBarSize 38
-Set Framerate 30
+Set WindowBarSize 57
+Set Framerate 24
 
 # ---- hidden setup ----
 Hide
