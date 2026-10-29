@@ -6,6 +6,9 @@
 # selectable actions.
 #
 #   demo/run.sh && demo/showcase-setup.sh
+#   # Render CRISP (recommended — see demo/render_crisp.sh for why):
+#   demo/render_crisp.sh demo/combined.tape demo/.work/agat-combined.mp4
+#   # Or the plain (softer) VHS encode:
 #   vhs demo/combined.tape   # -> demo/.work/agat-combined.mp4
 
 Output demo/.work/agat-combined.mp4
